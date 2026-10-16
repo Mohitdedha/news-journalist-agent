@@ -12,14 +12,16 @@ from config import GROQ_API_KEY
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 _GROQ_MODELS = [
-    "openai/gpt-oss-120b",     # best on this account
-    "openai/gpt-oss-20b",      # confirmed working fallback
-    "qwen/qwen3.8-27b",
+    "qwen/qwen3.8-27b",            # best general-purpose on this account
+    "allam-2-7b",                   # fallback
     "llama-3.3-70b-versatile",
     "llama3-70b-8192",
     "llama3-8b-8192",
     "mixtral-8x7b-32768",
 ]
+
+# Models that don't do text generation (skip them)
+_GROQ_SKIP = {"whisper", "guard", "orpheus", "gpt-oss"}
 
 
 _GROQ_MODEL_CACHE = [None]
@@ -40,16 +42,16 @@ def _get_available_model():
         if resp.status_code == 200:
             all_models = [m["id"] for m in resp.json().get("data", [])]
             print(f"[INFO] Groq available models: {all_models}")
-            # Try preferred models first
             available = set(all_models)
+            # Try preferred models first
             for m in _GROQ_MODELS:
                 if m in available:
                     print(f"[INFO] Using Groq model: {m}")
                     _GROQ_MODEL_CACHE[0] = m
                     return m
-            # Fall back to first model that looks like a text model
+            # Fall back: skip non-text models
             for m in all_models:
-                if "whisper" not in m.lower() and "guard" not in m.lower():
+                if not any(skip in m.lower() for skip in _GROQ_SKIP):
                     print(f"[INFO] Falling back to Groq model: {m}")
                     _GROQ_MODEL_CACHE[0] = m
                     return m
@@ -106,29 +108,35 @@ def fetch_article_text(url, timeout=15):
         return ""
 
 
-WRITE_PROMPT = """You are a professional international news journalist writing for IndiaBBCNews.com, an English-language news website for a global audience with particular interest in India and world affairs.
+WRITE_PROMPT = """You are a veteran news reporter with 15 years of experience at Reuters and The Hindu. You write fast, punchy, human news copy — the kind that reads like a real person wrote it, not a bot.
 
-Write an original, factual, reader-focused news article based on the source material below.
+Your job: write a news article based on the source material below for IndiaBBCNews.com.
 
-RULES:
-- Write in clear, formal but accessible English
-- Do NOT copy sentences verbatim from the source — rephrase and synthesize
-- Cite the original source at the bottom (e.g., "Source: BBC News")
-- Structure: headline, introduction paragraph, 3-5 body paragraphs with subheadings, brief conclusion
-- Include relevant context and background
-- Distinguish confirmed facts from allegations with words like "allegedly," "reportedly"
-- Word count: 450–800 words
-- NO keyword stuffing, NO AI-sounding filler phrases like "In today's fast-paced world"
-- End with a factual, informative closing paragraph
+WRITING STYLE — follow these exactly:
+- Mix short sentences with longer ones. Vary your rhythm. Avoid uniform sentence length.
+- Use active voice. Cut filler words ruthlessly.
+- Drop in a quote or two from officials/sources mentioned in the story (paraphrase if needed).
+- Use specific numbers, dates, names, and places — vague language sounds fake.
+- Do NOT start paragraphs with "In conclusion", "Furthermore", "Moreover", "Additionally", "It is worth noting", "It is important to", "In today's world", or any similar AI filler.
+- Do NOT use passive constructions like "it has been reported that" or "it is believed that" — just say what happened.
+- Write like you're explaining to a smart friend, not filing a formal report.
+- Contractions are fine occasionally (it's, didn't, won't).
+- Subheadings should be punchy 3-5 word phrases, not full sentences.
 
-OUTPUT FORMAT (return valid JSON only):
-{{
-  "headline": "...",
-  "meta_description": "One sentence, 120-155 characters, factual summary",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "content_html": "<p>...</p><h2>...</h2><p>...</p>...",
-  "image_query": "Specific 5-8 word search query for a relevant photograph"
-}}
+STRUCTURE:
+1. Opening paragraph: the key fact in one or two sentences. Lead with the most newsworthy detail.
+2. 2nd paragraph: context — why this matters, background in 2-3 sentences.
+3. 3-4 body paragraphs with short <h2> subheadings — details, reactions, numbers, quotes.
+4. Final paragraph: what happens next, or a broader implication. No "In conclusion."
+
+CONTENT RULES:
+- 500-700 words total
+- Use "reportedly" or "according to [source]" for unconfirmed claims
+- End with: <p><em>Source: {source_name}</em></p>
+- No keyword stuffing
+
+OUTPUT: Return ONLY a valid JSON object, no markdown fences, no explanation before or after:
+{{"headline": "Punchy headline under 12 words", "meta_description": "One factual sentence 120-155 characters", "tags": ["tag1","tag2","tag3","tag4","tag5"], "content_html": "<p>...</p><h2>...</h2><p>...</p>", "image_query": "5-8 word photo search query"}}
 
 SOURCE STORY:
 Title: {title}
@@ -136,7 +144,7 @@ Source: {source_name}
 URL: {url}
 Summary: {summary}
 
-FULL ARTICLE TEXT (use for accuracy, do not copy):
+ARTICLE TEXT (for accuracy only, do not copy sentences):
 {article_text}
 """
 
@@ -167,8 +175,13 @@ def write_article(story, max_retries=3):
                 if field not in data:
                     raise ValueError(f"Missing field: {field}")
 
-            if len(data.get("content_html", "")) < 200:
-                raise ValueError("Content too short")
+            content = data.get("content_html", "") or ""
+            if not isinstance(content, str):
+                raise ValueError(f"content_html is not a string: {type(content)}")
+            if content.strip().lower() in ("undefined", "null", "none", ""):
+                raise ValueError(f"content_html has placeholder value: {content[:50]}")
+            if len(content) < 200:
+                raise ValueError(f"Content too short: {len(content)} chars")
 
             return data
 
