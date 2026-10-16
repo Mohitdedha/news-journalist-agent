@@ -12,6 +12,9 @@ from config import GROQ_API_KEY
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 _GROQ_MODELS = [
+    "openai/gpt-oss-120b",     # best on this account
+    "openai/gpt-oss-20b",      # confirmed working fallback
+    "qwen/qwen3.8-27b",
     "llama-3.3-70b-versatile",
     "llama3-70b-8192",
     "llama3-8b-8192",
