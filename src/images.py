@@ -12,7 +12,7 @@ from PIL import Image
 from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
 genai.configure(api_key=GEMINI_API_KEY)
-_vision_model = genai.GenerativeModel("gemini-2.0-flash")
+_vision_model = genai.GenerativeModel("gemini-1.5-flash")
 
 UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 TARGET_WIDTH = 1200

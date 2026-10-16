@@ -9,7 +9,7 @@ WP_APP_PASSWORD = os.environ.get("WP_APP_PASSWORD", "")  # WordPress Application
 
 # AI
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 # Images — Unsplash (free, 50 req/hour on demo, 5000/hour after approval)
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
