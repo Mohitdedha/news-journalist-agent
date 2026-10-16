@@ -11,8 +11,7 @@ import requests
 from PIL import Image
 from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
-_VISION_MODEL = "gemini-1.5-flash"
-_GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{{}}/generateContent"
+_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent"
 
 
 def _gemini_vision(prompt, image_bytes, model):
@@ -108,7 +107,8 @@ RELEVANT: [yes/no]
 GENUINE: [yes/no]
 WATERMARK: [yes/no]
 """
-        text = _gemini_vision(prompt, img_data, _VISION_MODEL).strip()
+        from writer import _get_model
+        text = _gemini_vision(prompt, img_data, _get_model()).strip()
 
         relevant = bool(re.search(r'RELEVANT:\s*yes', text, re.IGNORECASE))
         genuine = bool(re.search(r'GENUINE:\s*yes', text, re.IGNORECASE))

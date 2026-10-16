@@ -10,7 +10,70 @@ import requests
 from bs4 import BeautifulSoup
 from config import GEMINI_API_KEY, GEMINI_MODEL
 
-_GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{{}}/generateContent"
+_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+_GEMINI_URL = _GEMINI_BASE + "/models/{}/generateContent"
+
+# Preferred model order — first available one wins
+_PREFERRED_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.0-pro",
+    "gemini-pro",
+]
+
+
+def _list_models():
+    """Return model names that support generateContent."""
+    try:
+        resp = requests.get(
+            f"{_GEMINI_BASE}/models",
+            params={"key": GEMINI_API_KEY},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        models = resp.json().get("models", [])
+        names = []
+        for m in models:
+            methods = m.get("supportedGenerationMethods", [])
+            if "generateContent" in methods:
+                names.append(m["name"].replace("models/", ""))
+        return names
+    except Exception as e:
+        print(f"[WARN] Could not list Gemini models: {e}")
+        return []
+
+
+def _pick_model():
+    """Pick the best available Gemini model."""
+    available = set(_list_models())
+    print(f"[INFO] Available Gemini models: {sorted(available)}")
+    for m in _PREFERRED_MODELS:
+        if m in available:
+            print(f"[INFO] Selected Gemini model: {m}")
+            return m
+    # Fallback: use the first available flash model
+    for m in sorted(available):
+        if "flash" in m:
+            print(f"[INFO] Fallback Gemini model: {m}")
+            return m
+    if available:
+        fallback = sorted(available)[0]
+        print(f"[INFO] Last-resort Gemini model: {fallback}")
+        return fallback
+    raise RuntimeError("No Gemini models available for this API key")
+
+
+_ACTIVE_MODEL = None
+
+
+def _get_model():
+    global _ACTIVE_MODEL
+    if _ACTIVE_MODEL is None:
+        _ACTIVE_MODEL = _pick_model()
+    return _ACTIVE_MODEL
 
 
 def _gemini_generate(prompt, model, temperature=0.4, max_tokens=2048):
@@ -97,7 +160,7 @@ def write_article(story, max_retries=3):
 
     for attempt in range(max_retries):
         try:
-            raw = _gemini_generate(prompt, GEMINI_MODEL).strip()
+            raw = _gemini_generate(prompt, _get_model()).strip()
 
             raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
             raw = re.sub(r'```\s*$', '', raw, flags=re.MULTILINE)
