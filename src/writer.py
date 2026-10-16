@@ -79,24 +79,40 @@ def _get_model():
     return _ACTIVE_MODEL
 
 
+def _gemini_post(url, payload):
+    """Try multiple auth methods; return successful response or raise last error."""
+    attempts = [
+        # 1. Standard query param API key
+        lambda: requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=60),
+        # 2. x-goog-api-key header
+        lambda: requests.post(url, headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}, json=payload, timeout=60),
+        # 3. Bearer token (for OAuth access tokens)
+        lambda: requests.post(url, headers={"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}, json=payload, timeout=60),
+    ]
+    last_resp = None
+    for i, attempt in enumerate(attempts):
+        resp = attempt()
+        if resp.status_code == 200:
+            return resp
+        print(f"[WARN] Auth method {i+1} → {resp.status_code}: {resp.text[:200]}")
+        last_resp = resp
+    last_resp.raise_for_status()
+
+
 def _gemini_generate(prompt, model, temperature=0.4, max_tokens=2048):
-    url = _GEMINI_URL.format(model)
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
     }
-    # Try with query param key first, then with header
-    resp = requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=60)
-    if resp.status_code == 404:
-        # Try with x-goog-api-key header instead
-        resp = requests.post(
-            url,
-            headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-            json=payload,
-            timeout=60,
-        )
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    # Try v1beta first, then v1
+    for api_ver in ("v1beta", "v1"):
+        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model}/generateContent"
+        try:
+            resp = _gemini_post(url, payload)
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except requests.HTTPError as e:
+            print(f"[WARN] {api_ver} failed for {model}: {e}")
+    raise RuntimeError(f"All endpoints failed for model {model}")
 
 
 def fetch_article_text(url, timeout=15):
