@@ -8,11 +8,24 @@ import time
 import json
 import requests
 from bs4 import BeautifulSoup
-from google import genai
-from google.genai import types
 from config import GEMINI_API_KEY, GEMINI_MODEL
 
-_client = genai.Client(api_key=GEMINI_API_KEY)
+_GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{{}}/generateContent"
+
+
+def _gemini_generate(prompt, model, temperature=0.4, max_tokens=2048):
+    url = _GEMINI_URL.format(model)
+    resp = requests.post(
+        url,
+        params={"key": GEMINI_API_KEY},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def fetch_article_text(url, timeout=15):
@@ -84,15 +97,7 @@ def write_article(story, max_retries=3):
 
     for attempt in range(max_retries):
         try:
-            response = _client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.4,
-                    max_output_tokens=2048,
-                )
-            )
-            raw = response.text.strip()
+            raw = _gemini_generate(prompt, GEMINI_MODEL).strip()
 
             raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
             raw = re.sub(r'```\s*$', '', raw, flags=re.MULTILINE)

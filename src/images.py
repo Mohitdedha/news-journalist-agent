@@ -6,14 +6,33 @@ import os
 import io
 import re
 import time
+import base64
 import requests
-from google import genai
-from google.genai import types
 from PIL import Image
 from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
-_client = genai.Client(api_key=GEMINI_API_KEY)
 _VISION_MODEL = "gemini-1.5-flash"
+_GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{{}}/generateContent"
+
+
+def _gemini_vision(prompt, image_bytes, model):
+    img_b64 = base64.b64encode(image_bytes).decode()
+    url = _GEMINI_URL.format(model)
+    resp = requests.post(
+        url,
+        params={"key": GEMINI_API_KEY},
+        json={
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}},
+                ]
+            }]
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 TARGET_WIDTH = 1200
@@ -89,14 +108,7 @@ RELEVANT: [yes/no]
 GENUINE: [yes/no]
 WATERMARK: [yes/no]
 """
-        response = _client.models.generate_content(
-            model=_VISION_MODEL,
-            contents=[
-                prompt,
-                types.Part.from_bytes(data=img_data, mime_type="image/jpeg")
-            ]
-        )
-        text = response.text.strip()
+        text = _gemini_vision(prompt, img_data, _VISION_MODEL).strip()
 
         relevant = bool(re.search(r'RELEVANT:\s*yes', text, re.IGNORECASE))
         genuine = bool(re.search(r'GENUINE:\s*yes', text, re.IGNORECASE))
