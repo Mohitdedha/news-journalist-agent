@@ -23,7 +23,7 @@ _GROQ_MODEL_CACHE = [None]
 
 
 def _get_available_model():
-    """Pick the first Groq model that exists on this account (cached)."""
+    """Pick the best available Groq model (cached after first call)."""
     if _GROQ_MODEL_CACHE[0]:
         return _GROQ_MODEL_CACHE[0]
     if not GROQ_API_KEY:
@@ -35,12 +35,23 @@ def _get_available_model():
             timeout=10,
         )
         if resp.status_code == 200:
-            available = {m["id"] for m in resp.json().get("data", [])}
+            all_models = [m["id"] for m in resp.json().get("data", [])]
+            print(f"[INFO] Groq available models: {all_models}")
+            # Try preferred models first
+            available = set(all_models)
             for m in _GROQ_MODELS:
                 if m in available:
                     print(f"[INFO] Using Groq model: {m}")
                     _GROQ_MODEL_CACHE[0] = m
                     return m
+            # Fall back to first model that looks like a text model
+            for m in all_models:
+                if "whisper" not in m.lower() and "guard" not in m.lower():
+                    print(f"[INFO] Falling back to Groq model: {m}")
+                    _GROQ_MODEL_CACHE[0] = m
+                    return m
+        else:
+            print(f"[WARN] Could not list Groq models: {resp.status_code} {resp.text[:200]}")
     except Exception as e:
         print(f"[WARN] Could not list Groq models: {e}")
     _GROQ_MODEL_CACHE[0] = _GROQ_MODELS[0]
