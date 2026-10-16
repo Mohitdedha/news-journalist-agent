@@ -25,8 +25,19 @@ _PREFERRED_MODELS = [
 ]
 
 
+def _validate_api_key():
+    """Check API key format and warn if it looks wrong."""
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY secret is not set in GitHub Secrets.")
+    if not GEMINI_API_KEY.startswith("AIza"):
+        print(f"[WARN] GEMINI_API_KEY does not start with 'AIza' (got '{GEMINI_API_KEY[:6]}...'). "
+              "This may not be a valid Google AI Studio API key. "
+              "Generate a fresh key at https://aistudio.google.com/apikey and update the GitHub Secret.")
+
+
 def _list_models():
     """Return model names that support generateContent."""
+    _validate_api_key()
     try:
         resp = requests.get(
             f"{_GEMINI_BASE}/models",
@@ -35,9 +46,6 @@ def _list_models():
         )
         resp.raise_for_status()
         models = resp.json().get("models", [])
-        # Print first model to inspect its structure
-        if models:
-            print(f"[DEBUG] First model object: {models[0]}")
         names = []
         for m in models:
             methods = m.get("supportedGenerationMethods", [])
