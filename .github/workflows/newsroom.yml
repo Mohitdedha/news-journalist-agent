@@ -9,7 +9,7 @@ on:
       publish_status:
         description: 'Post status (draft or publish)'
         required: true
-        default: 'draft'
+        default: 'publish'
         type: choice
         options: [draft, publish]
       max_stories:
