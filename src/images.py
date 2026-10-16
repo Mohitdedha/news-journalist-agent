@@ -66,6 +66,7 @@ def process_image(image_bytes, alt_text):
     """Resize, crop to 1200x630, compress to web format. Returns processed bytes."""
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        print(f"[INFO] Original image size: {img.width}x{img.height}")
 
         # Smart crop to 1200x630
         src_ratio = img.width / img.height
@@ -95,7 +96,9 @@ def process_image(image_bytes, alt_text):
                 break
             quality -= 8
 
-        return buf.getvalue()
+        result = buf.getvalue()
+        print(f"[INFO] Processed image: 1200x630, {len(result)//1024}KB")
+        return result
     except Exception as e:
         print(f"[WARN] Image processing error: {e}")
         return None
@@ -169,17 +172,9 @@ def find_and_process_image(image_query, headline, context):
 
         _used_photo_urls.add(photo_url)
 
-        # Caption: describe what the image relates to, not just "Unsplash"
-        photographer = photo.get("photographer", "")
-        photographer_url = photo.get("photographer_url", "")
-        if photographer and photographer_url:
-            caption = f'Photo related to {headline[:60]} — by <a href="{photographer_url}" target="_blank" rel="nofollow">{photographer}</a> on Unsplash'
-        elif photographer:
-            caption = f"Photo related to {headline[:60]} — {photographer} / Unsplash"
-        else:
-            caption = f"Representational image for: {headline[:80]}"
-
-        alt_text = f"{headline[:100]} — representational image"
+        # Short, clean caption — no Unsplash attribution in public text
+        alt_text = headline[:100]
+        caption = f"Representational image — {headline[:70]}"
 
         print(f"[INFO] Image accepted for: {headline[:60]}")
         return processed, alt_text, caption
