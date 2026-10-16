@@ -1,5 +1,5 @@
 """
-AI article writer using Google Gemini 2.0 Flash (free tier).
+AI article writer using Google Gemini (free tier).
 Produces original, SEO-friendly news articles in English.
 """
 import os
@@ -8,11 +8,11 @@ import time
 import json
 import requests
 from bs4 import BeautifulSoup
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from config import GEMINI_API_KEY, GEMINI_MODEL
 
-genai.configure(api_key=GEMINI_API_KEY)
-_model = genai.GenerativeModel(GEMINI_MODEL)
+_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 def fetch_article_text(url, timeout=15):
@@ -23,15 +23,13 @@ def fetch_article_text(url, timeout=15):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
 
-        # Remove nav, ads, scripts, styles
         for tag in soup(["script", "style", "nav", "footer", "aside", "iframe", "noscript"]):
             tag.decompose()
 
-        # Prefer article body
         article = soup.find("article") or soup.find(id="content") or soup.find(class_=re.compile(r'article|content|story|body', re.I))
         text = (article or soup.find("body") or soup).get_text(separator=" ", strip=True)
         text = re.sub(r'\s+', ' ', text).strip()
-        return text[:8000]  # cap to avoid token waste
+        return text[:8000]
     except Exception as e:
         print(f"[WARN] Could not fetch article text: {e}")
         return ""
@@ -58,7 +56,7 @@ OUTPUT FORMAT (return valid JSON only):
   "meta_description": "One sentence, 120-155 characters, factual summary",
   "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
   "content_html": "<p>...</p><h2>...</h2><p>...</p>...",
-  "image_query": "Specific 5-8 word Pexels search query for a relevant photograph"
+  "image_query": "Specific 5-8 word search query for a relevant photograph"
 }}
 
 SOURCE STORY:
@@ -86,16 +84,16 @@ def write_article(story, max_retries=3):
 
     for attempt in range(max_retries):
         try:
-            response = _model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
+            response = _client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
                     temperature=0.4,
                     max_output_tokens=2048,
                 )
             )
             raw = response.text.strip()
 
-            # Strip markdown code fences if present
             raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
             raw = re.sub(r'```\s*$', '', raw, flags=re.MULTILINE)
 
@@ -117,6 +115,6 @@ def write_article(story, max_retries=3):
             print(f"[WARN] Writer error attempt {attempt+1}: {e}")
 
         if attempt < max_retries - 1:
-            time.sleep(10 * (attempt + 1))  # backoff
+            time.sleep(10 * (attempt + 1))
 
     raise RuntimeError(f"Failed to write article after {max_retries} attempts: {story['title']}")

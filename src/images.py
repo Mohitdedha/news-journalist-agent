@@ -7,12 +7,13 @@ import io
 import re
 import time
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
-genai.configure(api_key=GEMINI_API_KEY)
-_vision_model = genai.GenerativeModel("gemini-1.5-flash")
+_client = genai.Client(api_key=GEMINI_API_KEY)
+_VISION_MODEL = "gemini-1.5-flash"
 
 UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 TARGET_WIDTH = 1200
@@ -88,10 +89,13 @@ RELEVANT: [yes/no]
 GENUINE: [yes/no]
 WATERMARK: [yes/no]
 """
-        response = _vision_model.generate_content([
-            prompt,
-            {"mime_type": "image/jpeg", "data": img_data}
-        ])
+        response = _client.models.generate_content(
+            model=_VISION_MODEL,
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=img_data, mime_type="image/jpeg")
+            ]
+        )
         text = response.text.strip()
 
         relevant = bool(re.search(r'RELEVANT:\s*yes', text, re.IGNORECASE))
