@@ -63,7 +63,7 @@ def _get_available_model():
     return _GROQ_MODELS[0]
 
 
-def _groq_generate(prompt, temperature=0.4, max_tokens=2048):
+def _groq_generate(prompt, temperature=0.4, max_tokens=900):
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY secret is not set in GitHub Secrets. "
                            "Get a free key at https://console.groq.com")
@@ -191,6 +191,8 @@ def write_article(story, max_retries=3):
             print(f"[WARN] Writer error attempt {attempt+1}: {e}")
 
         if attempt < max_retries - 1:
-            time.sleep(10 * (attempt + 1))
+            wait = 70 if "429" in str(locals().get("e", "")) or "rate" in str(locals().get("e", "")).lower() else 10
+            print(f"[INFO] Waiting {wait}s before retry...")
+            time.sleep(wait)
 
     raise RuntimeError(f"Failed to write article after {max_retries} attempts: {story['title']}")

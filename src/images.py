@@ -133,15 +133,25 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
         return None
 
 
+# Track used photo URLs within a run to avoid same image on multiple posts
+_used_photo_urls = set()
+
+
 def find_and_process_image(image_query, headline, context):
     """
-    End-to-end: search → download → verify → process → return (bytes, alt_text) or (None, None).
+    End-to-end: search → download → verify → process → return (bytes, alt_text, caption).
+    Skips photos already used in this run to prevent duplicates across posts.
     """
-    photos = search_unsplash(image_query, per_page=8)
+    photos = search_unsplash(image_query, per_page=10)
 
     for photo in photos:
         photo_url = photo.get("url", "")
         if not photo_url:
+            continue
+
+        # Skip photos already used in this run
+        if photo_url in _used_photo_urls:
+            print(f"[INFO] Skipping already-used photo: {photo_url[:60]}")
             continue
 
         image_bytes = download_image(photo_url)
@@ -157,11 +167,21 @@ def find_and_process_image(image_query, headline, context):
         if not processed:
             continue
 
-        alt_text = f"{description[:120]}"
-        photographer = photo.get("photographer", "")
-        caption = f"Photo: {photographer} / Unsplash" if photographer else "Photo: Unsplash"
+        _used_photo_urls.add(photo_url)
 
-        print(f"[INFO] Image accepted: {description[:80]}")
+        # Caption: describe what the image relates to, not just "Unsplash"
+        photographer = photo.get("photographer", "")
+        photographer_url = photo.get("photographer_url", "")
+        if photographer and photographer_url:
+            caption = f'Photo related to {headline[:60]} — by <a href="{photographer_url}" target="_blank" rel="nofollow">{photographer}</a> on Unsplash'
+        elif photographer:
+            caption = f"Photo related to {headline[:60]} — {photographer} / Unsplash"
+        else:
+            caption = f"Representational image for: {headline[:80]}"
+
+        alt_text = f"{headline[:100]} — representational image"
+
+        print(f"[INFO] Image accepted for: {headline[:60]}")
         return processed, alt_text, caption
 
     print("[WARN] No suitable image found for this article.")
