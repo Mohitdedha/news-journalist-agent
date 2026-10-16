@@ -117,7 +117,7 @@ def run():
             traceback.print_exc()
             errors.append(err)
 
-        time.sleep(3)  # polite pause between articles
+        time.sleep(65)  # wait for Groq OTPM window to reset (1000 tok/min limit)
 
     # 9. Batch SEO submission
     if new_post_urls:

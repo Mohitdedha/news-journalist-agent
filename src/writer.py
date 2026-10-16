@@ -191,8 +191,7 @@ def write_article(story, max_retries=3):
             print(f"[WARN] Writer error attempt {attempt+1}: {e}")
 
         if attempt < max_retries - 1:
-            wait = 70 if "429" in str(locals().get("e", "")) or "rate" in str(locals().get("e", "")).lower() else 10
-            print(f"[INFO] Waiting {wait}s before retry...")
-            time.sleep(wait)
+            print(f"[INFO] Waiting 70s before retry (rate limit window reset)...")
+            time.sleep(70)
 
     raise RuntimeError(f"Failed to write article after {max_retries} attempts: {story['title']}")
