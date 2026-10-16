@@ -15,13 +15,13 @@ _GEMINI_URL = _GEMINI_BASE + "/models/{}/generateContent"
 
 # Preferred model order — first available one wins
 _PREFERRED_MODELS = [
-    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-pro-latest",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
     "gemini-2.5-flash-lite",
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.0-pro",
-    "gemini-pro",
+    "gemini-2.5-flash",
+    "gemini-3.8-flash",
 ]
 
 
@@ -35,6 +35,9 @@ def _list_models():
         )
         resp.raise_for_status()
         models = resp.json().get("models", [])
+        # Print first model to inspect its structure
+        if models:
+            print(f"[DEBUG] First model object: {models[0]}")
         names = []
         for m in models:
             methods = m.get("supportedGenerationMethods", [])
@@ -78,15 +81,20 @@ def _get_model():
 
 def _gemini_generate(prompt, model, temperature=0.4, max_tokens=2048):
     url = _GEMINI_URL.format(model)
-    resp = requests.post(
-        url,
-        params={"key": GEMINI_API_KEY},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
-        },
-        timeout=60,
-    )
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+    }
+    # Try with query param key first, then with header
+    resp = requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=60)
+    if resp.status_code == 404:
+        # Try with x-goog-api-key header instead
+        resp = requests.post(
+            url,
+            headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+            json=payload,
+            timeout=60,
+        )
     resp.raise_for_status()
     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
