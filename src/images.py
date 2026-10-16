@@ -12,7 +12,7 @@ from google.genai import types
 from PIL import Image
 from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
-_client = genai.Client(api_key=GEMINI_API_KEY, http_options=types.HttpOptions(api_version="v1"))
+_client = genai.Client(api_key=GEMINI_API_KEY)
 _VISION_MODEL = "gemini-1.5-flash"
 
 UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
