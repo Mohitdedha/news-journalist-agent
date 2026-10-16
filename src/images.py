@@ -9,33 +9,42 @@ import time
 import requests
 import google.generativeai as genai
 from PIL import Image
-from config import PEXELS_API_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
+from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
 genai.configure(api_key=GEMINI_API_KEY)
 _vision_model = genai.GenerativeModel("gemini-2.0-flash")
 
-PEXELS_SEARCH = "https://api.pexels.com/v1/search"
+UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 TARGET_WIDTH = 1200
 TARGET_HEIGHT = 630
 MAX_FILE_KB = 200
 
 
-def search_pexels(query, per_page=5):
-    """Search Pexels for relevant photos."""
-    if not PEXELS_API_KEY:
-        print("[WARN] PEXELS_API_KEY not set")
+def search_unsplash(query, per_page=8):
+    """Search Unsplash for relevant landscape photos."""
+    if not UNSPLASH_ACCESS_KEY:
+        print("[WARN] UNSPLASH_ACCESS_KEY not set")
         return []
     try:
         resp = requests.get(
-            PEXELS_SEARCH,
-            headers={"Authorization": PEXELS_API_KEY},
+            UNSPLASH_SEARCH,
+            headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
             params={"query": query, "per_page": per_page, "orientation": "landscape"},
             timeout=10
         )
         resp.raise_for_status()
-        return resp.json().get("photos", [])
+        results = resp.json().get("results", [])
+        # Normalize to consistent structure
+        photos = []
+        for r in results:
+            photos.append({
+                "url": r.get("urls", {}).get("regular", ""),
+                "photographer": r.get("user", {}).get("name", ""),
+                "photographer_url": r.get("user", {}).get("links", {}).get("html", ""),
+            })
+        return photos
     except Exception as e:
-        print(f"[WARN] Pexels search error: {e}")
+        print(f"[WARN] Unsplash search error: {e}")
         return []
 
 
@@ -174,10 +183,10 @@ def find_and_process_image(image_query, headline, context):
     """
     End-to-end: search → download → verify → process → return (bytes, alt_text) or (None, None).
     """
-    photos = search_pexels(image_query, per_page=8)
+    photos = search_unsplash(image_query, per_page=8)
 
     for photo in photos:
-        photo_url = photo.get("src", {}).get("large2x") or photo.get("src", {}).get("original")
+        photo_url = photo.get("url", "")
         if not photo_url:
             continue
 
@@ -196,7 +205,7 @@ def find_and_process_image(image_query, headline, context):
 
         alt_text = f"{description[:120]}"
         photographer = photo.get("photographer", "")
-        caption = f"Photo: {photographer} / Pexels" if photographer else "Photo: Pexels"
+        caption = f"Photo: {photographer} / Unsplash" if photographer else "Photo: Unsplash"
 
         print(f"[INFO] Image accepted: {description[:80]}")
         return processed, alt_text, caption
