@@ -11,13 +11,47 @@ from bs4 import BeautifulSoup
 from config import GROQ_API_KEY
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-_GROQ_MODEL = "llama-3.3-70b-versatile"
+_GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768",
+]
+
+
+_GROQ_MODEL_CACHE = [None]
+
+
+def _get_available_model():
+    """Pick the first Groq model that exists on this account (cached)."""
+    if _GROQ_MODEL_CACHE[0]:
+        return _GROQ_MODEL_CACHE[0]
+    if not GROQ_API_KEY:
+        return _GROQ_MODELS[0]
+    try:
+        resp = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            available = {m["id"] for m in resp.json().get("data", [])}
+            for m in _GROQ_MODELS:
+                if m in available:
+                    print(f"[INFO] Using Groq model: {m}")
+                    _GROQ_MODEL_CACHE[0] = m
+                    return m
+    except Exception as e:
+        print(f"[WARN] Could not list Groq models: {e}")
+    _GROQ_MODEL_CACHE[0] = _GROQ_MODELS[0]
+    return _GROQ_MODELS[0]
 
 
 def _groq_generate(prompt, temperature=0.4, max_tokens=2048):
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY secret is not set in GitHub Secrets. "
                            "Get a free key at https://console.groq.com")
+    model = _get_available_model()
     resp = requests.post(
         _GROQ_URL,
         headers={
@@ -25,7 +59,7 @@ def _groq_generate(prompt, temperature=0.4, max_tokens=2048):
             "Content-Type": "application/json",
         },
         json={
-            "model": _GROQ_MODEL,
+            "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "max_tokens": max_tokens,
