@@ -25,19 +25,10 @@ _PREFERRED_MODELS = [
 ]
 
 
-def _validate_api_key():
-    """Check API key format and warn if it looks wrong."""
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY secret is not set in GitHub Secrets.")
-    if not GEMINI_API_KEY.startswith("AIza"):
-        print(f"[WARN] GEMINI_API_KEY does not start with 'AIza' (got '{GEMINI_API_KEY[:6]}...'). "
-              "This may not be a valid Google AI Studio API key. "
-              "Generate a fresh key at https://aistudio.google.com/apikey and update the GitHub Secret.")
-
-
 def _list_models():
     """Return model names that support generateContent."""
-    _validate_api_key()
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY secret is not set in GitHub Secrets.")
     try:
         resp = requests.get(
             f"{_GEMINI_BASE}/models",
@@ -112,15 +103,24 @@ def _gemini_generate(prompt, model, temperature=0.4, max_tokens=2048):
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
     }
-    # Try v1beta first, then v1
-    for api_ver in ("v1beta", "v1"):
-        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model}/generateContent"
+    base = "https://generativelanguage.googleapis.com"
+    # Try all URL variants: v1beta and v1, slash and colon method notation
+    urls = [
+        f"{base}/v1beta/models/{model}:generateContent",   # colon style (newer Google API convention)
+        f"{base}/v1beta/models/{model}/generateContent",   # slash style (older)
+        f"{base}/v1/models/{model}:generateContent",
+        f"{base}/v1/models/{model}/generateContent",
+    ]
+    last_err = None
+    for url in urls:
         try:
             resp = _gemini_post(url, payload)
+            print(f"[INFO] Success with URL: {url.split('googleapis.com')[1]}")
             return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
         except requests.HTTPError as e:
-            print(f"[WARN] {api_ver} failed for {model}: {e}")
-    raise RuntimeError(f"All endpoints failed for model {model}")
+            print(f"[WARN] Failed {url.split('googleapis.com')[1]}: {e}")
+            last_err = e
+    raise RuntimeError(f"All endpoints failed for model {model}: {last_err}")
 
 
 def fetch_article_text(url, timeout=15):
