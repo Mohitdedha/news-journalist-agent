@@ -1,0 +1,51 @@
+{
+  "rss_feeds": [
+    {"url": "https://feeds.bbci.co.uk/news/world/rss.xml", "name": "BBC World", "category": "global", "wp_category_id": 206},
+    {"url": "https://feeds.bbci.co.uk/news/technology/rss.xml", "name": "BBC Technology", "category": "technology", "wp_category_id": 33},
+    {"url": "https://feeds.bbci.co.uk/news/business/rss.xml", "name": "BBC Business", "category": "business", "wp_category_id": 193},
+    {"url": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml", "name": "BBC Science", "category": "science", "wp_category_id": 35},
+    {"url": "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", "name": "BBC Entertainment", "category": "entertainment", "wp_category_id": 189},
+    {"url": "https://feeds.bbci.co.uk/news/health/rss.xml", "name": "BBC Health", "category": "lifestyle", "wp_category_id": 18},
+    {"url": "https://feeds.bbci.co.uk/news/uk/rss.xml", "name": "BBC UK", "category": "europe-uk", "wp_category_id": 31},
+    {"url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "name": "NYT World", "category": "global", "wp_category_id": 206},
+    {"url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml", "name": "NYT Technology", "category": "technology", "wp_category_id": 33},
+    {"url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "name": "NYT Business", "category": "business", "wp_category_id": 193},
+    {"url": "https://feeds.reuters.com/reuters/topNews", "name": "Reuters Top News", "category": "global", "wp_category_id": 206},
+    {"url": "https://feeds.reuters.com/reuters/businessNews", "name": "Reuters Business", "category": "business", "wp_category_id": 193},
+    {"url": "https://feeds.reuters.com/reuters/technologyNews", "name": "Reuters Technology", "category": "technology", "wp_category_id": 33},
+    {"url": "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", "name": "Times of India - Top Stories", "category": "india", "wp_category_id": 211},
+    {"url": "https://timesofindia.indiatimes.com/rssfeeds/1221656.cms", "name": "Times of India - World", "category": "global", "wp_category_id": 206},
+    {"url": "https://indianexpress.com/feed/", "name": "Indian Express", "category": "india", "wp_category_id": 211},
+    {"url": "https://www.theguardian.com/world/rss", "name": "Guardian World", "category": "global", "wp_category_id": 206},
+    {"url": "https://www.theguardian.com/technology/rss", "name": "Guardian Technology", "category": "technology", "wp_category_id": 33},
+    {"url": "https://www.aljazeera.com/xml/rss/all.xml", "name": "Al Jazeera", "category": "global", "wp_category_id": 206},
+    {"url": "https://feeds.skynews.com/feeds/rss/world.xml", "name": "Sky News World", "category": "global", "wp_category_id": 206},
+    {"url": "https://www.espn.com/espn/rss/news", "name": "ESPN Sports", "category": "sports", "wp_category_id": 34},
+    {"url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US", "name": "Yahoo Finance", "category": "economy", "wp_category_id": 12},
+    {"url": "https://techcrunch.com/feed/", "name": "TechCrunch", "category": "technology", "wp_category_id": 33}
+  ],
+  "wp_categories": {
+    "global": 206,
+    "business": 193,
+    "technology": 33,
+    "entertainment": 189,
+    "sports": 34,
+    "economy": 12,
+    "india": 211,
+    "europe-uk": 31,
+    "science": 35,
+    "lifestyle": 18,
+    "cricket": 29,
+    "education": 14
+  },
+  "settings": {
+    "max_stories_per_run": 10,
+    "min_word_count": 400,
+    "max_word_count": 900,
+    "publish_status": "draft",
+    "duplicate_title_threshold": 0.75,
+    "max_age_hours": 24,
+    "retry_attempts": 3,
+    "retry_delay_seconds": 30
+  }
+}

@@ -1,0 +1,141 @@
+"""
+Main newsroom orchestrator.
+Called by GitHub Actions on a cron schedule.
+"""
+import sys
+import os
+import time
+import traceback
+
+# Add src dir to path
+sys.path.insert(0, os.path.dirname(__file__))
+
+from config import load_sources, load_history, save_history
+from discover import discover_stories
+from writer import write_article
+from images import find_and_process_image, upload_to_wordpress
+from publisher import create_post, check_duplicate_in_wp, test_connection
+from seo import submit_indexnow, ping_sitemap
+from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
+
+PUBLISH_STATUS = os.environ.get("PUBLISH_STATUS", "draft")  # override per run
+MAX_STORIES = int(os.environ.get("MAX_STORIES", "5"))
+
+
+def run():
+    print("[START] News Journalist Agent")
+
+    # 1. Verify WordPress connection
+    if not test_connection():
+        alert_wordpress_down("Could not authenticate with WordPress REST API")
+        sys.exit(1)
+
+    # 2. Discover stories
+    print(f"\n[DISCOVER] Fetching stories (max={MAX_STORIES})...")
+    stories = discover_stories(max_per_run=MAX_STORIES)
+    print(f"[DISCOVER] Found {len(stories)} candidate stories")
+
+    if not stories:
+        print("[INFO] No new stories to process. Exiting.")
+        log_run_summary(0, 0, 0, [])
+        return
+
+    history = load_history()
+    published_count = 0
+    skipped_count = 0
+    errors = []
+    new_post_urls = []
+
+    for i, story in enumerate(stories):
+        print(f"\n[STORY {i+1}/{len(stories)}] {story['title'][:80]}")
+
+        try:
+            # 3. Final duplicate check against live WordPress
+            if check_duplicate_in_wp(story["title"]):
+                print(f"[SKIP] Duplicate in WordPress: {story['title'][:60]}")
+                history["skipped_urls"].append(story["norm_url"])
+                history["skipped_urls"] = history["skipped_urls"][-2000:]
+                skipped_count += 1
+                continue
+
+            # 4. Write article with AI
+            print("[WRITE] Generating article with Gemini...")
+            try:
+                article = write_article(story)
+                article["source_name"] = story["source_name"]
+            except Exception as e:
+                err = f"Writer failed for '{story['title'][:50]}': {e}"
+                print(f"[ERROR] {err}")
+                errors.append(err)
+                if "quota" in str(e).lower() or "rate" in str(e).lower():
+                    alert_ai_quota(e)
+                    break  # stop processing if quota hit
+                continue
+
+            # 5. Find and process image
+            print("[IMAGE] Searching for relevant image...")
+            img_bytes, alt_text, caption = find_and_process_image(
+                image_query=article.get("image_query", story["title"]),
+                headline=article["headline"],
+                context=article.get("meta_description", "")
+            )
+
+            featured_media_id = None
+            if img_bytes:
+                slug = story["title"].lower()[:40].replace(" ", "-")
+                slug = "".join(c for c in slug if c.isalnum() or c == "-")
+                filename = f"{slug}.jpg"
+                featured_media_id = upload_to_wordpress(img_bytes, filename, alt_text or article["headline"], caption or "")
+                if featured_media_id:
+                    print(f"[OK] Image uploaded: media_id={featured_media_id}")
+
+            # 6. Publish to WordPress
+            print(f"[PUBLISH] Creating post as '{PUBLISH_STATUS}'...")
+            post_id, post_url = create_post(
+                article=article,
+                wp_category_id=story["wp_category_id"],
+                featured_media_id=featured_media_id,
+                publish_status=PUBLISH_STATUS
+            )
+
+            # 7. Record in history
+            history["published_urls"].append(story["norm_url"])
+            history["published_urls"] = history["published_urls"][-5000:]
+            history["published_titles"].append(article["headline"])
+            history["published_titles"] = history["published_titles"][-1000:]
+            save_history(history)
+
+            # 8. SEO discovery (only for published posts)
+            if PUBLISH_STATUS == "publish" and post_url:
+                new_post_urls.append(post_url)
+
+            published_count += 1
+
+        except Exception as e:
+            err = f"Story {i+1} failed: {str(e)[:150]}"
+            print(f"[ERROR] {err}")
+            traceback.print_exc()
+            errors.append(err)
+
+        time.sleep(3)  # polite pause between articles
+
+    # 9. Batch SEO submission
+    if new_post_urls:
+        print(f"\n[SEO] Submitting {len(new_post_urls)} URLs to IndexNow...")
+        submit_indexnow(new_post_urls)
+        ping_sitemap()
+
+    # 10. Summary
+    log_run_summary(
+        stories_processed=len(stories),
+        stories_published=published_count,
+        stories_skipped=skipped_count,
+        errors=errors
+    )
+
+    if errors:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    run()

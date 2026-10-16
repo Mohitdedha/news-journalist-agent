@@ -1,0 +1,80 @@
+name: News Journalist Agent
+
+on:
+  schedule:
+    # Runs every hour at minute 15 (UTC)
+    - cron: '15 * * * *'
+  workflow_dispatch:
+    inputs:
+      publish_status:
+        description: 'Post status (draft or publish)'
+        required: true
+        default: 'draft'
+        type: choice
+        options: [draft, publish]
+      max_stories:
+        description: 'Max stories per run (1-10)'
+        required: true
+        default: '3'
+
+jobs:
+  publish-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Restore history from cache to persist duplicate tracking across runs
+      - name: Restore article history cache
+        uses: actions/cache@v4
+        with:
+          path: data/history.json
+          key: article-history-${{ github.run_id }}
+          restore-keys: |
+            article-history-
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run newsroom
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+          PUBLISH_STATUS: ${{ inputs.publish_status || 'draft' }}
+          MAX_STORIES: ${{ inputs.max_stories || '5' }}
+        run: |
+          cd src
+          python main.py
+
+      # Save updated history so next run knows what was published
+      - name: Save article history cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: data/history.json
+          key: article-history-${{ github.run_id }}
+
+      - name: Upload run log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log-${{ github.run_number }}
+          path: data/history.json
+          retention-days: 7

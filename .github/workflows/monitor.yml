@@ -1,0 +1,98 @@
+name: Journalist Agent Health Monitor
+
+on:
+  schedule:
+    # Daily check at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Run health checks
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: "587"
+        run: |
+          python - <<'EOF'
+          import os, sys, requests
+
+          WP_URL = os.environ.get("WP_URL", "")
+          WP_USER = os.environ.get("WP_USER", "")
+          WP_PASS = os.environ.get("WP_APP_PASSWORD", "")
+
+          issues = []
+
+          # Check 1: WordPress API
+          try:
+              r = requests.get(f"{WP_URL}/wp-json/wp/v2/posts?per_page=1", timeout=10)
+              if r.status_code != 200:
+                  issues.append(f"WordPress API returned {r.status_code}")
+              else:
+                  print(f"[OK] WordPress API accessible")
+          except Exception as e:
+              issues.append(f"WordPress API unreachable: {e}")
+
+          # Check 2: WordPress auth
+          try:
+              r = requests.get(f"{WP_URL}/wp-json/wp/v2/users/me", auth=(WP_USER, WP_PASS), timeout=10)
+              if r.status_code == 200:
+                  print(f"[OK] WordPress auth valid")
+              else:
+                  issues.append(f"WordPress auth failed: {r.status_code}")
+          except Exception as e:
+              issues.append(f"WordPress auth error: {e}")
+
+          # Check 3: Site sitemap
+          try:
+              r = requests.get(f"{WP_URL}/sitemap_index.xml", timeout=10)
+              if r.status_code == 200:
+                  print(f"[OK] Sitemap accessible")
+              else:
+                  issues.append(f"Sitemap returned {r.status_code}")
+          except Exception as e:
+              issues.append(f"Sitemap error: {e}")
+
+          # Check 4: Gemini API key present
+          if not os.environ.get("GEMINI_API_KEY"):
+              issues.append("GEMINI_API_KEY secret not set")
+          else:
+              print("[OK] Gemini API key present")
+
+          print(f"\nHealth check complete: {len(issues)} issue(s)")
+          for iss in issues:
+              print(f"  ISSUE: {iss}")
+
+          if issues:
+              # Send alert
+              sys.path.insert(0, "src")
+              from monitor import send_alert
+              send_alert(
+                  subject="Daily health check found issues",
+                  body_lines=["Daily health check completed with issues:"] + [f"• {i}" for i in issues],
+                  error_type="WARNING"
+              )
+              sys.exit(1)
+          EOF
