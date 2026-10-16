@@ -57,7 +57,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_HOST: smtp.gmail.com
           SMTP_PORT: "587"
-          PUBLISH_STATUS: ${{ inputs.publish_status || 'draft' }}
+          PUBLISH_STATUS: ${{ inputs.publish_status || 'publish' }}
           MAX_STORIES: ${{ inputs.max_stories || '5' }}
         run: |
           cd src
