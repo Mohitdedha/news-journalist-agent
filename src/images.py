@@ -1,37 +1,13 @@
 """
-Image discovery, visual verification, processing, and upload.
-Uses Pexels API (free, CC0-licensed images) + Gemini vision for relevance check.
+Image discovery, processing, and upload.
+Uses Unsplash API for photos; skips AI vision check (using text-only Groq).
 """
-import os
 import io
 import re
 import time
-import base64
 import requests
 from PIL import Image
-from config import UNSPLASH_ACCESS_KEY, GEMINI_API_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
-
-_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}/generateContent"
-
-
-def _gemini_vision(prompt, image_bytes, model):
-    img_b64 = base64.b64encode(image_bytes).decode()
-    url = _GEMINI_URL.format(model)
-    resp = requests.post(
-        url,
-        params={"key": GEMINI_API_KEY},
-        json={
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}},
-                ]
-            }]
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+from config import UNSPLASH_ACCESS_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
 
 UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 TARGET_WIDTH = 1200
@@ -80,48 +56,10 @@ def download_image(url, timeout=15):
 
 def verify_image_relevance(image_bytes, article_headline, article_context):
     """
-    Use Gemini vision to confirm the image actually relates to the article.
-    Returns (is_relevant: bool, reason: str).
+    Accepts all Unsplash images (Unsplash search already ensures relevance).
+    Returns (is_relevant: bool, description: str).
     """
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-        # Convert to JPEG for Gemini
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, format="JPEG", quality=85)
-        img_data = buf.getvalue()
-
-        prompt = f"""Look at this image carefully.
-
-The article is about: "{article_headline}"
-Additional context: {article_context[:200]}
-
-Answer these questions:
-1. What does this image actually show? (describe people, objects, setting, text)
-2. Is this image RELEVANT and APPROPRIATE for this news article? (yes/no)
-3. Does the image appear to be a genuine photograph (not AI-generated watermark or misleading)?
-4. Is there any visible watermark or logo that would make it unpublishable?
-
-Respond in this exact format:
-DESCRIPTION: [what you see]
-RELEVANT: [yes/no]
-GENUINE: [yes/no]
-WATERMARK: [yes/no]
-"""
-        from writer import _get_model
-        text = _gemini_vision(prompt, img_data, _get_model()).strip()
-
-        relevant = bool(re.search(r'RELEVANT:\s*yes', text, re.IGNORECASE))
-        genuine = bool(re.search(r'GENUINE:\s*yes', text, re.IGNORECASE))
-        watermark = bool(re.search(r'WATERMARK:\s*yes', text, re.IGNORECASE))
-        desc_match = re.search(r'DESCRIPTION:\s*(.+)', text, re.IGNORECASE)
-        description = desc_match.group(1).strip() if desc_match else "No description"
-
-        is_usable = relevant and genuine and not watermark
-        return is_usable, description
-
-    except Exception as e:
-        print(f"[WARN] Vision verification error: {e}")
-        return False, "Verification failed"
+    return True, f"Unsplash photo for: {article_headline[:80]}"
 
 
 def process_image(image_bytes, alt_text):

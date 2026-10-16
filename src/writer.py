@@ -1,5 +1,5 @@
 """
-AI article writer using Google Gemini (free tier).
+AI article writer using Groq (free tier — llama-3.3-70b).
 Produces original, SEO-friendly news articles in English.
 """
 import os
@@ -8,119 +8,34 @@ import time
 import json
 import requests
 from bs4 import BeautifulSoup
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import GROQ_API_KEY
 
-_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-_GEMINI_URL = _GEMINI_BASE + "/models/{}/generateContent"
-
-# Preferred model order — first available one wins
-_PREFERRED_MODELS = [
-    "gemini-flash-latest",
-    "gemini-pro-latest",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-3.8-flash",
-]
+_GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
-def _list_models():
-    """Return model names that support generateContent."""
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY secret is not set in GitHub Secrets.")
-    try:
-        resp = requests.get(
-            f"{_GEMINI_BASE}/models",
-            params={"key": GEMINI_API_KEY},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        models = resp.json().get("models", [])
-        names = []
-        for m in models:
-            methods = m.get("supportedGenerationMethods", [])
-            if "generateContent" in methods:
-                names.append(m["name"].replace("models/", ""))
-        return names
-    except Exception as e:
-        print(f"[WARN] Could not list Gemini models: {e}")
-        return []
-
-
-def _pick_model():
-    """Pick the best available Gemini model."""
-    available = set(_list_models())
-    print(f"[INFO] Available Gemini models: {sorted(available)}")
-    for m in _PREFERRED_MODELS:
-        if m in available:
-            print(f"[INFO] Selected Gemini model: {m}")
-            return m
-    # Fallback: use the first available flash model
-    for m in sorted(available):
-        if "flash" in m:
-            print(f"[INFO] Fallback Gemini model: {m}")
-            return m
-    if available:
-        fallback = sorted(available)[0]
-        print(f"[INFO] Last-resort Gemini model: {fallback}")
-        return fallback
-    raise RuntimeError("No Gemini models available for this API key")
-
-
-_ACTIVE_MODEL = None
-
-
-def _get_model():
-    global _ACTIVE_MODEL
-    if _ACTIVE_MODEL is None:
-        _ACTIVE_MODEL = _pick_model()
-    return _ACTIVE_MODEL
-
-
-def _gemini_post(url, payload):
-    """Try multiple auth methods; return successful response or raise last error."""
-    attempts = [
-        # 1. Standard query param API key
-        lambda: requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=60),
-        # 2. x-goog-api-key header
-        lambda: requests.post(url, headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}, json=payload, timeout=60),
-        # 3. Bearer token (for OAuth access tokens)
-        lambda: requests.post(url, headers={"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}, json=payload, timeout=60),
-    ]
-    last_resp = None
-    for i, attempt in enumerate(attempts):
-        resp = attempt()
-        if resp.status_code == 200:
-            return resp
-        print(f"[WARN] Auth method {i+1} → {resp.status_code}: {resp.text[:200]}")
-        last_resp = resp
-    last_resp.raise_for_status()
-
-
-def _gemini_generate(prompt, model, temperature=0.4, max_tokens=2048):
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
-    }
-    base = "https://generativelanguage.googleapis.com"
-    # Try all URL variants: v1beta and v1, slash and colon method notation
-    urls = [
-        f"{base}/v1beta/models/{model}:generateContent",   # colon style (newer Google API convention)
-        f"{base}/v1beta/models/{model}/generateContent",   # slash style (older)
-        f"{base}/v1/models/{model}:generateContent",
-        f"{base}/v1/models/{model}/generateContent",
-    ]
-    last_err = None
-    for url in urls:
-        try:
-            resp = _gemini_post(url, payload)
-            print(f"[INFO] Success with URL: {url.split('googleapis.com')[1]}")
-            return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        except requests.HTTPError as e:
-            print(f"[WARN] Failed {url.split('googleapis.com')[1]}: {e}")
-            last_err = e
-    raise RuntimeError(f"All endpoints failed for model {model}: {last_err}")
+def _groq_generate(prompt, temperature=0.4, max_tokens=2048):
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY secret is not set in GitHub Secrets. "
+                           "Get a free key at https://console.groq.com")
+    resp = requests.post(
+        _GROQ_URL,
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": _GROQ_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        },
+        timeout=60,
+    )
+    if resp.status_code != 200:
+        print(f"[WARN] Groq API error {resp.status_code}: {resp.text[:300]}")
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
 
 
 def fetch_article_text(url, timeout=15):
@@ -192,7 +107,7 @@ def write_article(story, max_retries=3):
 
     for attempt in range(max_retries):
         try:
-            raw = _gemini_generate(prompt, _get_model()).strip()
+            raw = _groq_generate(prompt).strip()
 
             raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
             raw = re.sub(r'```\s*$', '', raw, flags=re.MULTILINE)
