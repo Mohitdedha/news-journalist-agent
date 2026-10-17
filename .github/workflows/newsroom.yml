@@ -60,6 +60,7 @@ jobs:
           PUBLISH_STATUS: ${{ inputs.publish_status || 'publish' }}
           MAX_STORIES: ${{ inputs.max_stories || '5' }}
         run: |
+          mkdir -p data
           cd src
           python main.py
 
