@@ -1,6 +1,6 @@
 """
 Image discovery, processing, and upload.
-Uses Unsplash API for photos; skips AI vision check (using text-only Groq).
+Uses Unsplash API. Tracks used photo IDs in history.json to avoid repeats across runs.
 """
 import io
 import re
@@ -14,9 +14,25 @@ TARGET_WIDTH = 1200
 TARGET_HEIGHT = 630
 MAX_FILE_KB = 200
 
+# In-memory set for this run (also backed by history.json across runs)
+_used_photo_ids = set()
 
-def search_unsplash(query, per_page=8):
-    """Search Unsplash for relevant landscape photos."""
+
+def init_used_photos(history):
+    """Load previously used photo IDs from history into memory."""
+    global _used_photo_ids
+    _used_photo_ids = set(history.get("used_photo_ids", []))
+    print(f"[INFO] Loaded {len(_used_photo_ids)} used photo IDs from history")
+
+
+def save_used_photos(history):
+    """Persist current used photo IDs back to history dict (caller saves to disk)."""
+    # Keep only last 500 to avoid bloat
+    all_ids = list(_used_photo_ids)
+    history["used_photo_ids"] = all_ids[-500:]
+
+
+def search_unsplash(query, per_page=10):
     if not UNSPLASH_ACCESS_KEY:
         print("[WARN] UNSPLASH_ACCESS_KEY not set")
         return []
@@ -29,13 +45,11 @@ def search_unsplash(query, per_page=8):
         )
         resp.raise_for_status()
         results = resp.json().get("results", [])
-        # Normalize to consistent structure
         photos = []
         for r in results:
             photos.append({
+                "id": r.get("id", ""),
                 "url": r.get("urls", {}).get("regular", ""),
-                "photographer": r.get("user", {}).get("name", ""),
-                "photographer_url": r.get("user", {}).get("links", {}).get("html", ""),
             })
         return photos
     except Exception as e:
@@ -44,7 +58,6 @@ def search_unsplash(query, per_page=8):
 
 
 def download_image(url, timeout=15):
-    """Download image bytes from URL."""
     try:
         resp = requests.get(url, timeout=timeout)
         resp.raise_for_status()
@@ -54,21 +67,9 @@ def download_image(url, timeout=15):
         return None
 
 
-def verify_image_relevance(image_bytes, article_headline, article_context):
-    """
-    Accepts all Unsplash images (Unsplash search already ensures relevance).
-    Returns (is_relevant: bool, description: str).
-    """
-    return True, f"Unsplash photo for: {article_headline[:80]}"
-
-
-def process_image(image_bytes, alt_text):
-    """Resize, crop to 1200x630, compress to web format. Returns processed bytes."""
+def process_image(image_bytes):
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        print(f"[INFO] Original image size: {img.width}x{img.height}")
-
-        # Smart crop to 1200x630
         src_ratio = img.width / img.height
         target_ratio = TARGET_WIDTH / TARGET_HEIGHT
 
@@ -85,7 +86,6 @@ def process_image(image_bytes, alt_text):
 
         img = img.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
 
-        # Compress to JPEG
         buf = io.BytesIO()
         quality = 82
         while quality >= 50:
@@ -97,7 +97,7 @@ def process_image(image_bytes, alt_text):
             quality -= 8
 
         result = buf.getvalue()
-        print(f"[INFO] Processed image: 1200x630, {len(result)//1024}KB")
+        print(f"[INFO] Image processed: 1200x630, {len(result)//1024}KB")
         return result
     except Exception as e:
         print(f"[WARN] Image processing error: {e}")
@@ -105,7 +105,6 @@ def process_image(image_bytes, alt_text):
 
 
 def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
-    """Upload image to WordPress media library. Returns media ID or None."""
     try:
         auth = (WP_USER, WP_APP_PASSWORD)
         headers = {
@@ -114,21 +113,14 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
         }
         resp = requests.post(
             f"{WP_URL}/wp-json/wp/v2/media",
-            auth=auth,
-            headers=headers,
-            data=image_bytes,
-            timeout=30
+            auth=auth, headers=headers, data=image_bytes, timeout=30
         )
         resp.raise_for_status()
         media = resp.json()
         media_id = media["id"]
-
-        # Set alt text
         requests.post(
             f"{WP_URL}/wp-json/wp/v2/media/{media_id}",
-            auth=auth,
-            json={"alt_text": alt_text, "caption": caption},
-            timeout=15
+            auth=auth, json={"alt_text": alt_text, "caption": caption}, timeout=15
         )
         return media_id
     except Exception as e:
@@ -136,84 +128,68 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
         return None
 
 
-# Track used photo URLs within a run to avoid same image on multiple posts
-_used_photo_urls = set()
-
-
 def _build_fallback_queries(image_query, headline):
-    """Build a list of progressively simpler search queries."""
+    """Build progressively simpler search queries."""
     queries = [image_query]
 
-    # Try first 3 words of headline
-    words = [w for w in headline.split() if len(w) > 3]
+    # First 3 meaningful words from headline
+    stop = {"the","a","an","of","in","on","at","to","for","is","are","was","were",
+            "and","or","but","with","from","by","as","its","it","this","that","s","pm"}
+    words = [w.strip("'\",.!?:") for w in headline.split() if len(w.strip("'\",.!?:")) > 3
+             and w.strip("'\",.!?:").lower() not in stop]
     if words:
         queries.append(" ".join(words[:3]))
+        queries.append(words[0])  # single keyword fallback
 
-    # Try first 2 words of original query
-    q_words = image_query.split()
-    if len(q_words) > 2:
-        queries.append(" ".join(q_words[:2]))
-
-    # Extract topic keywords: skip common stop words
-    stop = {"the", "a", "an", "of", "in", "on", "at", "to", "for", "is", "are",
-            "was", "were", "and", "or", "but", "with", "from", "by", "as"}
-    topic_words = [w for w in words if w.lower() not in stop]
-    if topic_words:
-        queries.append(topic_words[0])  # single most important word
-
-    # Deduplicate while preserving order
+    # Remove duplicate queries
     seen = set()
     unique = []
     for q in queries:
-        if q not in seen:
+        if q and q not in seen:
             seen.add(q)
             unique.append(q)
     return unique
 
 
-def find_and_process_image(image_query, headline, context):
+def find_and_process_image(image_query, headline, context, history=None):
     """
-    End-to-end: search → download → verify → process → return (bytes, alt_text, caption).
-    Skips photos already used in this run. Falls back to simpler queries if primary fails.
+    Search → download → process → upload path.
+    Tracks used photo IDs in memory + history.json to prevent repeats across runs.
+    Returns (bytes, alt_text, caption) or (None, None, None).
     """
     fallback_queries = _build_fallback_queries(image_query, headline)
 
     for query in fallback_queries:
-        photos = search_unsplash(query, per_page=10)
+        photos = search_unsplash(query, per_page=15)
         if not photos:
-            print(f"[INFO] No Unsplash results for query: '{query}' — trying fallback")
+            print(f"[INFO] No results for query: '{query}'")
             continue
 
         for photo in photos:
+            photo_id = photo.get("id", "")
             photo_url = photo.get("url", "")
-            if not photo_url:
+            if not photo_url or not photo_id:
                 continue
 
-            # Skip photos already used in this run
-            if photo_url in _used_photo_urls:
-                print(f"[INFO] Skipping already-used photo: {photo_url[:60]}")
+            if photo_id in _used_photo_ids:
+                print(f"[INFO] Skipping used photo id={photo_id}")
                 continue
 
             image_bytes = download_image(photo_url)
             if not image_bytes:
                 continue
 
-            is_relevant, description = verify_image_relevance(image_bytes, headline, context)
-            if not is_relevant:
-                print(f"[INFO] Image rejected: {description[:80]}")
-                continue
-
-            processed = process_image(image_bytes, description)
+            processed = process_image(image_bytes)
             if not processed:
                 continue
 
-            _used_photo_urls.add(photo_url)
+            # Mark as used globally
+            _used_photo_ids.add(photo_id)
 
             alt_text = headline[:100]
             caption = f"Representational image — {headline[:70]}"
-
-            print(f"[INFO] Image accepted (query='{query}'): {headline[:60]}")
+            print(f"[INFO] Image found (query='{query}', id={photo_id}): {headline[:50]}")
             return processed, alt_text, caption
 
-    print("[WARN] No suitable image found for this article.")
+    print("[WARN] No suitable image found.")
     return None, None, None

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from config import load_sources, load_history, save_history
 from discover import discover_stories
 from writer import write_article
-from images import find_and_process_image, upload_to_wordpress
+from images import find_and_process_image, upload_to_wordpress, init_used_photos, save_used_photos
 from publisher import create_post, check_duplicate_in_wp, test_connection
 from seo import submit_indexnow, ping_sitemap
 from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
@@ -41,6 +41,7 @@ def run():
         return
 
     history = load_history()
+    init_used_photos(history)  # load used photo IDs from previous runs
     published_count = 0
     skipped_count = 0
     errors = []
@@ -103,7 +104,8 @@ def run():
             img_bytes, alt_text, caption = find_and_process_image(
                 image_query=article.get("image_query", story["title"]),
                 headline=article["headline"],
-                context=article.get("meta_description", "")
+                context=article.get("meta_description", ""),
+                history=history
             )
 
             featured_media_id = None
@@ -129,6 +131,7 @@ def run():
             history["published_urls"] = history["published_urls"][-5000:]
             history["published_titles"].append(article["headline"])
             history["published_titles"] = history["published_titles"][-1000:]
+            save_used_photos(history)  # persist used photo IDs
             save_history(history)
 
             # 8. SEO discovery (only for published posts)
