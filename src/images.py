@@ -140,44 +140,80 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
 _used_photo_urls = set()
 
 
+def _build_fallback_queries(image_query, headline):
+    """Build a list of progressively simpler search queries."""
+    queries = [image_query]
+
+    # Try first 3 words of headline
+    words = [w for w in headline.split() if len(w) > 3]
+    if words:
+        queries.append(" ".join(words[:3]))
+
+    # Try first 2 words of original query
+    q_words = image_query.split()
+    if len(q_words) > 2:
+        queries.append(" ".join(q_words[:2]))
+
+    # Extract topic keywords: skip common stop words
+    stop = {"the", "a", "an", "of", "in", "on", "at", "to", "for", "is", "are",
+            "was", "were", "and", "or", "but", "with", "from", "by", "as"}
+    topic_words = [w for w in words if w.lower() not in stop]
+    if topic_words:
+        queries.append(topic_words[0])  # single most important word
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique = []
+    for q in queries:
+        if q not in seen:
+            seen.add(q)
+            unique.append(q)
+    return unique
+
+
 def find_and_process_image(image_query, headline, context):
     """
     End-to-end: search → download → verify → process → return (bytes, alt_text, caption).
-    Skips photos already used in this run to prevent duplicates across posts.
+    Skips photos already used in this run. Falls back to simpler queries if primary fails.
     """
-    photos = search_unsplash(image_query, per_page=10)
+    fallback_queries = _build_fallback_queries(image_query, headline)
 
-    for photo in photos:
-        photo_url = photo.get("url", "")
-        if not photo_url:
+    for query in fallback_queries:
+        photos = search_unsplash(query, per_page=10)
+        if not photos:
+            print(f"[INFO] No Unsplash results for query: '{query}' — trying fallback")
             continue
 
-        # Skip photos already used in this run
-        if photo_url in _used_photo_urls:
-            print(f"[INFO] Skipping already-used photo: {photo_url[:60]}")
-            continue
+        for photo in photos:
+            photo_url = photo.get("url", "")
+            if not photo_url:
+                continue
 
-        image_bytes = download_image(photo_url)
-        if not image_bytes:
-            continue
+            # Skip photos already used in this run
+            if photo_url in _used_photo_urls:
+                print(f"[INFO] Skipping already-used photo: {photo_url[:60]}")
+                continue
 
-        is_relevant, description = verify_image_relevance(image_bytes, headline, context)
-        if not is_relevant:
-            print(f"[INFO] Image rejected: {description[:80]}")
-            continue
+            image_bytes = download_image(photo_url)
+            if not image_bytes:
+                continue
 
-        processed = process_image(image_bytes, description)
-        if not processed:
-            continue
+            is_relevant, description = verify_image_relevance(image_bytes, headline, context)
+            if not is_relevant:
+                print(f"[INFO] Image rejected: {description[:80]}")
+                continue
 
-        _used_photo_urls.add(photo_url)
+            processed = process_image(image_bytes, description)
+            if not processed:
+                continue
 
-        # Short, clean caption — no Unsplash attribution in public text
-        alt_text = headline[:100]
-        caption = f"Representational image — {headline[:70]}"
+            _used_photo_urls.add(photo_url)
 
-        print(f"[INFO] Image accepted for: {headline[:60]}")
-        return processed, alt_text, caption
+            alt_text = headline[:100]
+            caption = f"Representational image — {headline[:70]}"
+
+            print(f"[INFO] Image accepted (query='{query}'): {headline[:60]}")
+            return processed, alt_text, caption
 
     print("[WARN] No suitable image found for this article.")
     return None, None, None

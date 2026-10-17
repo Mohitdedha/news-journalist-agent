@@ -46,11 +46,37 @@ def run():
     errors = []
     new_post_urls = []
 
+    from difflib import SequenceMatcher
+
+    def _title_seen_in_history(title, published_titles):
+        """Check if a similar title was already published in a previous run."""
+        stop = {"the","a","an","of","in","on","at","to","for","is","are","was","were",
+                "and","or","but","with","from","by","as","its","it","this","that","s"}
+        words_new = set(w.strip("'\",.!?").lower() for w in title.split()
+                        if w.lower() not in stop and len(w) > 2)
+        for past in published_titles[-200:]:  # only check recent 200
+            sim = SequenceMatcher(None, title.lower(), past.lower()).ratio()
+            words_past = set(w.strip("'\",.!?").lower() for w in past.split()
+                             if w.lower() not in stop and len(w) > 2)
+            kw = len(words_new & words_past) / min(len(words_new), len(words_past)) if words_new and words_past else 0
+            if sim >= 0.72 or kw >= 0.70:
+                print(f"[SKIP] Duplicate in history: '{past[:60]}' (sim={sim:.2f}, kw={kw:.2f})")
+                return True
+        return False
+
     for i, story in enumerate(stories):
         print(f"\n[STORY {i+1}/{len(stories)}] {story['title'][:80]}")
 
         try:
-            # 3. Final duplicate check against live WordPress
+            # 3a. Check history (previous runs)
+            if _title_seen_in_history(story["title"], history.get("published_titles", [])):
+                print(f"[SKIP] Duplicate topic in history: {story['title'][:60]}")
+                history["skipped_urls"].append(story["norm_url"])
+                history["skipped_urls"] = history["skipped_urls"][-2000:]
+                skipped_count += 1
+                continue
+
+            # 3b. Final duplicate check against live WordPress
             if check_duplicate_in_wp(story["title"]):
                 print(f"[SKIP] Duplicate in WordPress: {story['title'][:60]}")
                 history["skipped_urls"].append(story["norm_url"])

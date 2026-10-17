@@ -14,22 +14,41 @@ def _auth():
     return (WP_USER, WP_APP_PASSWORD)
 
 
-def check_duplicate_in_wp(headline, threshold=0.80):
-    """Search WordPress for posts with similar titles to avoid duplicates."""
+def _keyword_overlap(a, b):
+    """Return ratio of shared meaningful words between two titles."""
+    stop = {"the", "a", "an", "of", "in", "on", "at", "to", "for", "is", "are",
+            "was", "were", "and", "or", "but", "with", "from", "by", "as", "its",
+            "it", "this", "that", "has", "have", "had", "be", "been", "s"}
+    words_a = set(w.strip("'\",.!?").lower() for w in a.split() if w.lower() not in stop and len(w) > 2)
+    words_b = set(w.strip("'\",.!?").lower() for w in b.split() if w.lower() not in stop and len(w) > 2)
+    if not words_a or not words_b:
+        return 0.0
+    overlap = len(words_a & words_b)
+    return overlap / min(len(words_a), len(words_b))
+
+
+def check_duplicate_in_wp(headline, threshold=0.72):
+    """Search WordPress for posts with similar titles to avoid duplicates.
+
+    Uses both string similarity AND keyword overlap to catch paraphrased titles
+    about the same topic (e.g. 'Dancing Salaryman Goes Viral' vs 'Salaryman
+    Takes Internet by Storm').
+    """
     try:
         # Search by first significant words
         search_term = " ".join(headline.split()[:5])
         resp = requests.get(
             f"{WP_URL}/wp-json/wp/v2/posts",
-            params={"search": search_term, "per_page": 5, "_fields": "id,title,link"},
+            params={"search": search_term, "per_page": 10, "_fields": "id,title,link"},
             timeout=10
         )
         resp.raise_for_status()
         for post in resp.json():
             existing_title = post.get("title", {}).get("rendered", "")
             sim = SequenceMatcher(None, headline.lower(), existing_title.lower()).ratio()
-            if sim >= threshold:
-                print(f"[INFO] Duplicate found in WP: '{existing_title}' (sim={sim:.2f})")
+            kw = _keyword_overlap(headline, existing_title)
+            if sim >= threshold or kw >= 0.70:
+                print(f"[INFO] Duplicate in WP: '{existing_title}' (sim={sim:.2f}, kw={kw:.2f})")
                 return True
         return False
     except Exception as e:

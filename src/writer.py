@@ -108,35 +108,21 @@ def fetch_article_text(url, timeout=15):
         return ""
 
 
-WRITE_PROMPT = """You are a veteran news reporter with 15 years of experience at Reuters and The Hindu. You write fast, punchy, human news copy — the kind that reads like a real person wrote it, not a bot.
+WRITE_PROMPT = """You are a veteran news reporter. Write a short, punchy news article for IndiaBBCNews.com.
 
-Your job: write a news article based on the source material below for IndiaBBCNews.com.
+STYLE: Active voice. Varied sentence length. Specific facts, names, numbers. No AI filler phrases like "Furthermore", "Moreover", "It is worth noting". Write like a human, not a bot.
 
-WRITING STYLE — follow these exactly:
-- Mix short sentences with longer ones. Vary your rhythm. Avoid uniform sentence length.
-- Use active voice. Cut filler words ruthlessly.
-- Drop in a quote or two from officials/sources mentioned in the story (paraphrase if needed).
-- Use specific numbers, dates, names, and places — vague language sounds fake.
-- Do NOT start paragraphs with "In conclusion", "Furthermore", "Moreover", "Additionally", "It is worth noting", "It is important to", "In today's world", or any similar AI filler.
-- Do NOT use passive constructions like "it has been reported that" or "it is believed that" — just say what happened.
-- Write like you're explaining to a smart friend, not filing a formal report.
-- Contractions are fine occasionally (it's, didn't, won't).
-- Subheadings should be punchy 3-5 word phrases, not full sentences.
+STRUCTURE: Opening fact → context → 2-3 body paragraphs with <h2> subheadings → brief closing. Keep it tight.
 
-STRUCTURE:
-1. Opening paragraph: the key fact in one or two sentences. Lead with the most newsworthy detail.
-2. 2nd paragraph: context — why this matters, background in 2-3 sentences.
-3. 3-4 body paragraphs with short <h2> subheadings — details, reactions, numbers, quotes.
-4. Final paragraph: what happens next, or a broader implication. No "In conclusion."
-
-CONTENT RULES:
-- 500-700 words total
+RULES:
+- 300-400 words ONLY (very important — stay under 400 words)
 - Use "reportedly" or "according to [source]" for unconfirmed claims
-- End with: <p><em>Source: {source_name}</em></p>
-- No keyword stuffing
+- End content with: <p><em>Source: {source_name}</em></p>
 
-OUTPUT: Return ONLY a valid JSON object, no markdown fences, no explanation before or after:
-{{"headline": "Punchy headline under 12 words", "meta_description": "One factual sentence 120-155 characters", "tags": ["tag1","tag2","tag3","tag4","tag5"], "content_html": "<p>...</p><h2>...</h2><p>...</p>", "image_query": "5-8 word photo search query"}}
+OUTPUT: Return ONLY a valid JSON object. No markdown fences. No text before or after the JSON.
+The JSON must be complete and properly closed. Keep content_html short to fit in the response.
+
+{{"headline": "Punchy headline under 12 words", "meta_description": "One factual sentence 120-155 characters", "tags": ["tag1","tag2","tag3","tag4","tag5"], "content_html": "<p>Lead paragraph.</p><h2>Subhead</h2><p>Body.</p><p><em>Source: {source_name}</em></p>", "image_query": "5-8 word photo search query"}}
 
 SOURCE STORY:
 Title: {title}
@@ -144,9 +130,25 @@ Source: {source_name}
 URL: {url}
 Summary: {summary}
 
-ARTICLE TEXT (for accuracy only, do not copy sentences):
+ARTICLE TEXT (use only for facts, do not copy):
 {article_text}
 """
+
+
+def _repair_truncated_json(raw):
+    """Attempt to repair JSON truncated mid-string by closing open structures."""
+    raw = raw.strip()
+    # Count open braces/brackets
+    depth_brace = raw.count('{') - raw.count('}')
+    depth_bracket = raw.count('[') - raw.count(']')
+    # If last char is mid-string, close it
+    if raw and raw[-1] not in ('}', ']', '"'):
+        # Close any open string
+        raw += '"'
+    # Close open arrays then objects
+    raw += ']' * max(0, depth_bracket)
+    raw += '}' * max(0, depth_brace)
+    return raw
 
 
 def write_article(story, max_retries=3):
@@ -167,8 +169,16 @@ def write_article(story, max_retries=3):
 
             raw = re.sub(r'^```json\s*', '', raw, flags=re.MULTILINE)
             raw = re.sub(r'```\s*$', '', raw, flags=re.MULTILINE)
+            raw = raw.strip()
 
-            data = json.loads(raw)
+            # Try direct parse first
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as je:
+                print(f"[WARN] JSON truncated, attempting repair: {je}")
+                repaired = _repair_truncated_json(raw)
+                data = json.loads(repaired)
+                print("[INFO] JSON repaired successfully")
 
             required = ["headline", "meta_description", "tags", "content_html", "image_query"]
             for field in required:
@@ -186,7 +196,7 @@ def write_article(story, max_retries=3):
             return data
 
         except json.JSONDecodeError as e:
-            print(f"[WARN] JSON parse error attempt {attempt+1}: {e}")
+            print(f"[WARN] JSON parse error attempt {attempt+1} (repair failed): {e}")
         except Exception as e:
             print(f"[WARN] Writer error attempt {attempt+1}: {e}")
 
