@@ -94,7 +94,7 @@ def discover_stories(max_per_run=10):
 
             # Title similarity check against recent published titles
             too_similar = any(
-                title_similarity(title, t) > 0.75 for t in seen_titles[-200:]
+                title_similarity(title, t) > 0.72 for t in seen_titles[-200:]
             )
             if too_similar:
                 continue

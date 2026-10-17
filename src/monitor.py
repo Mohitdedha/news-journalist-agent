@@ -110,10 +110,10 @@ def alert_ai_quota(error_detail):
     send_alert(
         subject="AI API quota exceeded or error",
         body_lines=[
-            "The Gemini AI API returned an error or quota limit.",
+            "The Groq API returned an error or rate limit.",
             f"Error: {str(error_detail)[:200]}",
-            "Action: Check Google AI Studio quota at aistudio.google.com.",
-            "Consider reducing max_stories_per_run in data/sources.json.",
+            "Action: Check Groq quota at console.groq.com.",
+            "Consider reducing MAX_STORIES in the workflow.",
         ],
         error_type="WARNING"
     )

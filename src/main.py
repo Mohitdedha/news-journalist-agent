@@ -86,7 +86,7 @@ def run():
                 continue
 
             # 4. Write article with AI
-            print("[WRITE] Generating article with Gemini...")
+            print("[WRITE] Generating article with Groq...")
             try:
                 article = write_article(story)
                 article["source_name"] = story["source_name"]
@@ -146,7 +146,9 @@ def run():
             traceback.print_exc()
             errors.append(err)
 
-        time.sleep(65)  # wait for Groq OTPM window to reset (1000 tok/min limit)
+        # Wait for Groq OTPM window to reset (1000 tok/min limit) — skip after last story
+        if i < len(stories) - 1:
+            time.sleep(65)
 
     # 9. Batch SEO submission
     if new_post_urls:
