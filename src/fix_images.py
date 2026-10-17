@@ -110,7 +110,7 @@ def fix_post_image(post):
             slug = re.sub(r'[^a-z0-9\-]', '', title.lower()[:40].replace(" ", "-"))
             filename = f"{slug}-fix.jpg"
             alt_text = title[:100]
-            caption = f"Representational image — {title[:70]}"
+            caption = ""
 
             media_id, _ = upload_to_wordpress(processed, filename, alt_text, caption)
             if not media_id:

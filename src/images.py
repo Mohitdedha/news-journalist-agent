@@ -207,7 +207,7 @@ def find_and_process_image(image_query, headline, context, history=None):
             _used_photo_ids.add(photo_id)
 
             alt_text = headline[:100]
-            caption = f"Representational image — {headline[:70]}"
+            caption = ""
             print(f"[INFO] Image found (query='{query}', id={photo_id}): {headline[:50]}")
             return processed, alt_text, caption
 
