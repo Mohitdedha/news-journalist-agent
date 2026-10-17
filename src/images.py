@@ -5,6 +5,7 @@ Uses Unsplash API. Tracks used photo IDs in history.json to avoid repeats across
 import io
 import re
 import time
+import random
 import requests
 from PIL import Image
 from config import UNSPLASH_ACCESS_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
@@ -32,19 +33,23 @@ def save_used_photos(history):
     history["used_photo_ids"] = all_ids[-500:]
 
 
-def search_unsplash(query, per_page=10):
+def search_unsplash(query, per_page=20, randomize_page=False):
     if not UNSPLASH_ACCESS_KEY:
         print("[WARN] UNSPLASH_ACCESS_KEY not set")
         return []
     try:
+        # Use random page offset for generic fallback queries to get variety
+        page = random.randint(1, 4) if randomize_page else 1
         resp = requests.get(
             UNSPLASH_SEARCH,
             headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
-            params={"query": query, "per_page": per_page, "orientation": "landscape"},
+            params={"query": query, "per_page": per_page, "orientation": "landscape", "page": page},
             timeout=10
         )
         resp.raise_for_status()
         results = resp.json().get("results", [])
+        # Shuffle results so we don't always pick the top result
+        random.shuffle(results)
         photos = []
         for r in results:
             photos.append({
@@ -170,9 +175,12 @@ def find_and_process_image(image_query, headline, context, history=None):
     Returns (bytes, alt_text, caption) or (None, None, None).
     """
     fallback_queries = _build_fallback_queries(image_query, headline)
+    generic_fallbacks = set(_GENERIC_FALLBACKS)
 
     for query in fallback_queries:
-        photos = search_unsplash(query, per_page=20)
+        # Randomize page for generic fallbacks to avoid always getting the same top results
+        is_generic = query in generic_fallbacks
+        photos = search_unsplash(query, per_page=20, randomize_page=is_generic)
         if not photos:
             print(f"[INFO] No results for query: '{query}'")
             continue
