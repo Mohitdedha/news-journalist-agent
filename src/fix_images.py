@@ -112,7 +112,7 @@ def fix_post_image(post):
             alt_text = title[:100]
             caption = f"Representational image — {title[:70]}"
 
-            media_id = upload_to_wordpress(processed, filename, alt_text, caption)
+            media_id, _ = upload_to_wordpress(processed, filename, alt_text, caption)
             if not media_id:
                 continue
 

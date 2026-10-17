@@ -105,6 +105,7 @@ def process_image(image_bytes):
 
 
 def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
+    """Upload image. Returns (media_id, media_url) or (None, None)."""
     try:
         auth = (WP_USER, WP_APP_PASSWORD)
         headers = {
@@ -118,14 +119,16 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
         resp.raise_for_status()
         media = resp.json()
         media_id = media["id"]
+        # source_url is the public URL of the uploaded image
+        media_url = media.get("source_url", "") or media.get("guid", {}).get("rendered", "")
         requests.post(
             f"{WP_URL}/wp-json/wp/v2/media/{media_id}",
             auth=auth, json={"alt_text": alt_text, "caption": caption}, timeout=15
         )
-        return media_id
+        return media_id, media_url
     except Exception as e:
         print(f"[WARN] WordPress media upload error: {e}")
-        return None
+        return None, None
 
 
 _GENERIC_FALLBACKS = ["news", "world news", "politics", "government", "city"]

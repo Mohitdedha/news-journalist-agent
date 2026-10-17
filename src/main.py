@@ -17,6 +17,7 @@ from images import find_and_process_image, upload_to_wordpress, init_used_photos
 from publisher import create_post, check_duplicate_in_wp, test_connection
 from seo import submit_indexnow, ping_sitemap
 from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
+from social import post_to_all
 
 PUBLISH_STATUS = os.environ.get("PUBLISH_STATUS", "draft")  # override per run
 MAX_STORIES = int(os.environ.get("MAX_STORIES", "5"))
@@ -109,11 +110,14 @@ def run():
             )
 
             featured_media_id = None
+            featured_media_url = None
             if img_bytes:
                 slug = story["title"].lower()[:40].replace(" ", "-")
                 slug = "".join(c for c in slug if c.isalnum() or c == "-")
                 filename = f"{slug}.jpg"
-                featured_media_id = upload_to_wordpress(img_bytes, filename, alt_text or article["headline"], caption or "")
+                featured_media_id, featured_media_url = upload_to_wordpress(
+                    img_bytes, filename, alt_text or article["headline"], caption or ""
+                )
                 if featured_media_id:
                     print(f"[OK] Image uploaded: media_id={featured_media_id}")
 
@@ -134,7 +138,12 @@ def run():
             save_used_photos(history)  # persist used photo IDs
             save_history(history)
 
-            # 8. SEO discovery (only for published posts)
+            # 8. Social media posting
+            if PUBLISH_STATUS == "publish" and post_url:
+                print("[SOCIAL] Posting to social media...")
+                post_to_all(article, post_url, image_url=featured_media_url)
+
+            # 9. SEO discovery
             if PUBLISH_STATUS == "publish" and post_url:
                 new_post_urls.append(post_url)
 
