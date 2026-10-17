@@ -128,20 +128,29 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
         return None
 
 
+_GENERIC_FALLBACKS = ["news", "world news", "politics", "government", "city"]
+
+
 def _build_fallback_queries(image_query, headline):
-    """Build progressively simpler search queries."""
+    """Build progressively simpler search queries, ending with generic fallbacks."""
     queries = [image_query]
 
-    # First 3 meaningful words from headline
     stop = {"the","a","an","of","in","on","at","to","for","is","are","was","were",
-            "and","or","but","with","from","by","as","its","it","this","that","s","pm"}
-    words = [w.strip("'\",.!?:") for w in headline.split() if len(w.strip("'\",.!?:")) > 3
-             and w.strip("'\",.!?:").lower() not in stop]
-    if words:
-        queries.append(" ".join(words[:3]))
-        queries.append(words[0])  # single keyword fallback
+            "and","or","but","with","from","by","as","its","it","this","that","s",
+            "pm","new","over","after","than","will","have","been","amid","say","says"}
 
-    # Remove duplicate queries
+    words = [w.strip("'\",.!?:()") for w in headline.split()
+             if len(w.strip("'\",.!?:()")) > 3
+             and w.strip("'\",.!?:()").lower() not in stop]
+
+    if len(words) >= 2:
+        queries.append(" ".join(words[:2]))  # first 2 meaningful words
+    if words:
+        queries.append(words[0])             # single most important word
+
+    # Generic fallbacks so we ALWAYS find something
+    queries.extend(_GENERIC_FALLBACKS)
+
     seen = set()
     unique = []
     for q in queries:
@@ -160,7 +169,7 @@ def find_and_process_image(image_query, headline, context, history=None):
     fallback_queries = _build_fallback_queries(image_query, headline)
 
     for query in fallback_queries:
-        photos = search_unsplash(query, per_page=15)
+        photos = search_unsplash(query, per_page=20)
         if not photos:
             print(f"[INFO] No results for query: '{query}'")
             continue

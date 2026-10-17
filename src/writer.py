@@ -82,24 +82,41 @@ def _groq_call(prompt, max_tokens=700, temperature=0.4):
 # ── Prompt 1: plain HTML content only ──────────────────────────────────────
 
 _CONTENT_PROMPT = """\
-You are a veteran news reporter. Write a 280-320 word news article in HTML for IndiaBBCNews.com.
+You are a human journalist at an independent news desk. Write a 300-word news article in HTML.
 
-RULES:
-- Active voice, varied sentence length, specific facts and names.
-- NO AI filler: no "Furthermore", "Moreover", "It is worth noting", "In conclusion".
-- Use "reportedly" or "according to [source]" for unconfirmed claims.
-- Start with a strong <p> lead sentence (the key fact).
-- Include 2 short <h2> subheadings mid-article.
-- End with: <p><em>Source: {source_name}</em></p>
+VOICE: Write exactly like a real reporter — direct, punchy, human. Not a bot summarising facts.
 
-OUTPUT: Only the HTML body — nothing else. No JSON. No explanation. Start directly with <p>.
+BANNED PHRASES (never use these):
+- "In a significant development", "amid growing concerns", "it is worth noting",
+  "shed light on", "in the wake of", "Furthermore", "Moreover", "Additionally",
+  "It is important to", "In conclusion", "has been reported that", "it is believed that",
+  "stakeholders", "landscape", "going forward", "at this point in time", "delve into"
+
+STYLE RULES:
+- Mix short punchy sentences with longer ones. Vary the rhythm like a real human does.
+- Lead with the most newsworthy fact — no build-up, just hit it.
+- Drop in 1-2 quotes from officials or sources (paraphrase if needed, attribute them).
+- Use exact numbers, dates, names, places. Vague = fake.
+- Contractions are fine (it's, didn't, won't, can't).
+- Subheadings: 3-4 word punchy phrases, not full sentences.
+
+STRUCTURE:
+<p>Lead — key fact in 1-2 sentences. Straight to the point.</p>
+<p>Why it matters — 2 sentences of context.</p>
+<h2>Short Subhead</h2>
+<p>Details, quotes, reaction.</p>
+<h2>Short Subhead</h2>
+<p>What happens next or broader impact. No "In conclusion".</p>
+<p><em>Source: {source_name}</em></p>
+
+OUTPUT: Only the HTML. No JSON. No explanation. Start with <p>.
 
 STORY:
 Title: {title}
 Source: {source_name}
 Summary: {summary}
 
-ARTICLE TEXT (use only for accuracy, do not copy sentences):
+ARTICLE TEXT (facts only — do NOT copy sentences, rewrite everything in your own voice):
 {article_text}
 """
 
@@ -111,8 +128,8 @@ For this news story, return ONLY a JSON object. No explanation, no markdown fenc
 Story title: {title}
 Summary: {summary}
 
-JSON format:
-{{"headline": "Punchy headline max 12 words", "meta_description": "One factual sentence 120-155 characters", "tags": ["tag1","tag2","tag3","tag4","tag5"], "image_query": "specific 4-6 word Unsplash photo search — use location or person name, NOT generic military/soldier"}}
+JSON format — fill in real values:
+{{"headline": "Short punchy headline max 10 words, not a sentence fragment", "meta_description": "One factual sentence 120-155 chars, include key names/numbers", "tags": ["tag1","tag2","tag3","tag4","tag5"], "image_query": "specific location or person Unsplash search, NOT 'military soldier gun' — e.g. 'London parliament building', 'Khartoum Sudan street', 'Keir Starmer press conference'"}}
 """
 
 

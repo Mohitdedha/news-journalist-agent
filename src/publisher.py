@@ -56,15 +56,107 @@ def check_duplicate_in_wp(headline, threshold=0.72):
         return False  # assume no duplicate on error
 
 
+def _fetch_recent_posts(limit=20):
+    """Fetch recent published posts for internal linking."""
+    try:
+        resp = requests.get(
+            f"{WP_URL}/wp-json/wp/v2/posts",
+            params={"per_page": limit, "status": "publish", "_fields": "id,title,link,tags"},
+            timeout=10
+        )
+        resp.raise_for_status()
+        posts = []
+        for p in resp.json():
+            title = p.get("title", {}).get("rendered", "")
+            link = p.get("link", "")
+            if title and link:
+                posts.append({"title": title, "link": link})
+        return posts
+    except Exception as e:
+        print(f"[WARN] Could not fetch posts for internal links: {e}")
+        return []
+
+
+def _inject_internal_links(content, headline, recent_posts, max_links=2):
+    """
+    Find 2 related posts and inject <a href> links naturally into the content.
+    Matches on shared keywords between current headline and recent post titles.
+    """
+    stop = {"the","a","an","of","in","on","at","to","for","is","are","was","were",
+            "and","or","but","with","from","by","as","its","it","this","that","s",
+            "pm","said","says","new","over","after","before","than","will","have"}
+
+    def keywords(text):
+        return set(w.strip("'\",.!?:()").lower() for w in text.split()
+                   if len(w) > 3 and w.strip("'\",.!?:()").lower() not in stop)
+
+    current_kw = keywords(headline)
+    candidates = []
+    for post in recent_posts:
+        post_kw = keywords(post["title"])
+        overlap = len(current_kw & post_kw)
+        if overlap >= 1:
+            candidates.append((overlap, post))
+
+    candidates.sort(key=lambda x: -x[0])
+    chosen = [p for _, p in candidates[:max_links]]
+
+    if not chosen:
+        return content
+
+    # Inject links after first </p> occurrences (natural mid-article placement)
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(content, "html.parser")
+    paragraphs = soup.find_all("p")
+    link_idx = 0
+
+    for i, para in enumerate(paragraphs):
+        if link_idx >= len(chosen):
+            break
+        # Skip very short paragraphs and the last one (usually source/disclosure)
+        if len(para.get_text()) < 80 or i == len(paragraphs) - 1:
+            continue
+        # Skip if paragraph already has a link
+        if para.find("a"):
+            continue
+
+        post = chosen[link_idx]
+        # Find a keyword from the related post title that appears in this paragraph
+        para_text = para.get_text().lower()
+        post_kw = keywords(post["title"])
+        anchor_word = next((w for w in post_kw if w in para_text), None)
+
+        if anchor_word:
+            # Replace first occurrence of the word with a link
+            old_html = str(para)
+            # Case-insensitive replace of first occurrence
+            pattern = re.compile(re.escape(anchor_word), re.IGNORECASE)
+            def replace_with_link(m):
+                return f'<a href="{post["link"]}" title="{post["title"]}">{m.group()}</a>'
+            new_html = pattern.sub(replace_with_link, old_html, count=1)
+            if new_html != old_html:
+                para.replace_with(BeautifulSoup(new_html, "html.parser").find("p") or para)
+                link_idx += 1
+
+    result = str(soup)
+    if link_idx > 0:
+        print(f"[INFO] Injected {link_idx} internal link(s)")
+    return result
+
+
 def create_post(article, wp_category_id, featured_media_id=None, publish_status="draft"):
     """
-    Create a WordPress post. Returns post ID or None.
+    Create a WordPress post. Returns (post_id, post_url).
     publish_status: 'draft' for testing, 'publish' for live
     """
     headline = article["headline"]
     content = article["content_html"]
     meta_desc = article["meta_description"]
     tags_list = article.get("tags", [])
+
+    # Internal linking — fetch recent posts and inject 2 links
+    recent_posts = _fetch_recent_posts(limit=20)
+    content = _inject_internal_links(content, headline, recent_posts, max_links=2)
 
     # Add disclosure paragraph at end
     disclosure = (
