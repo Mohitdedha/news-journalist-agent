@@ -174,7 +174,7 @@ def write_article(story, max_retries=3):
         try:
             # ── Step 1: Generate HTML content ──────────────────────────────
             print(f"[WRITE] Step 1: generating content (attempt {attempt+1})...")
-            content_html = _groq_call(content_prompt, max_tokens=700)
+            content_html = _groq_call(content_prompt, max_tokens=1500)
 
             # Strip any accidental JSON/markdown wrapping
             content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)
