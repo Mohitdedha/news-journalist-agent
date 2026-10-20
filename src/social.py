@@ -218,8 +218,13 @@ def post_instagram(headline, meta_description, post_url, image_url, tags):
             tmp.write(branded)
             tmp_path = tmp.name
 
-        # Login and post
+        # Login and post (set recent app version to avoid "out of date" error)
         cl = Client()
+        cl.set_settings({
+            "app_version": "269.0.0.18.75",
+            "android_release": "11",
+            "android_version": 30,
+        })
         cl.login(IG_USERNAME, IG_PASSWORD)
         media = cl.photo_upload(tmp_path, caption=caption)
         print(f"[SOCIAL] Instagram posted: {media.pk}")
