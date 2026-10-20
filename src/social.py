@@ -23,6 +23,7 @@ FB_PAGE_ID           = os.environ.get("FB_PAGE_ID", "")
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
 IG_USERNAME          = os.environ.get("IG_USERNAME", "")
 IG_PASSWORD          = os.environ.get("IG_PASSWORD", "")
+IG_SESSION           = os.environ.get("IG_SESSION", "")
 TWITTER_API_KEY      = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_API_SECRET   = os.environ.get("TWITTER_API_SECRET", "")
 TWITTER_ACCESS_TOKEN = os.environ.get("TWITTER_ACCESS_TOKEN", "")
@@ -193,8 +194,8 @@ def _make_instagram_image(image_bytes, headline):
 # ── Instagram (via instagrapi — no Facebook token needed) ────────────────────
 
 def post_instagram(headline, meta_description, post_url, image_url, tags):
-    if not IG_USERNAME or not IG_PASSWORD:
-        print("[SOCIAL] Instagram: IG_USERNAME/IG_PASSWORD not set — skipping")
+    if not IG_USERNAME or (not IG_PASSWORD and not IG_SESSION):
+        print("[SOCIAL] Instagram: credentials not set — skipping")
         return False
     if not image_url:
         print("[SOCIAL] Instagram: no image URL — skipping (image required)")
@@ -218,14 +219,19 @@ def post_instagram(headline, meta_description, post_url, image_url, tags):
             tmp.write(branded)
             tmp_path = tmp.name
 
-        # Login and post (set recent app version to avoid "out of date" error)
+        # Login using saved session (preferred) or username/password
         cl = Client()
-        cl.set_settings({
-            "app_version": "269.0.0.18.75",
-            "android_release": "11",
-            "android_version": 30,
-        })
-        cl.login(IG_USERNAME, IG_PASSWORD)
+        if IG_SESSION:
+            import json as _json
+            cl.set_settings(_json.loads(IG_SESSION))
+            cl.login(IG_USERNAME, IG_PASSWORD)
+        else:
+            cl.set_settings({
+                "app_version": "269.0.0.18.75",
+                "android_release": "11",
+                "android_version": 30,
+            })
+            cl.login(IG_USERNAME, IG_PASSWORD)
         media = cl.photo_upload(tmp_path, caption=caption)
         print(f"[SOCIAL] Instagram posted: {media.pk}")
 
