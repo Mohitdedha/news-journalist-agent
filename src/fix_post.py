@@ -25,7 +25,7 @@ def fix_post(post_id, title, source_name, summary):
     import re, json
 
     # Generate content
-    content_html = _groq_call(content_prompt, max_tokens=700)
+    content_html = _groq_call(content_prompt, max_tokens=1500)
     content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)
     content_html = re.sub(r'```\s*$', '', content_html, flags=re.MULTILINE).strip()
     if not content_html.startswith("<"):
