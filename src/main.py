@@ -95,9 +95,12 @@ def run():
                 err = f"Writer failed for '{story['title'][:50]}': {e}"
                 print(f"[ERROR] {err}")
                 errors.append(err)
-                if "quota" in str(e).lower() or "rate" in str(e).lower():
+                if "quota" in str(e).lower():
                     alert_ai_quota(e)
-                    break  # stop processing if quota hit
+                    break  # hard quota exceeded — stop
+                if "rate" in str(e).lower():
+                    print("[WAIT] Rate limit hit — waiting 90s before next story...")
+                    time.sleep(90)
                 continue
 
             # 5. Find and process image
