@@ -103,6 +103,93 @@ def post_facebook(headline, meta_description, post_url, image_url, tags):
         return False
 
 
+# ── Instagram image branding ─────────────────────────────────────────────────
+
+def _make_instagram_image(image_bytes, headline):
+    """
+    Takes raw image bytes and returns Instagram-ready branded image bytes.
+    - Square crop 1080x1080
+    - Dark gradient overlay at bottom
+    - White headline text (truncated)
+    - Red accent bar + indiabbcnews.com watermark
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # Center-crop to square
+        w, h = img.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top = (h - side) // 2
+        img = img.crop((left, top, left + side, top + side))
+        img = img.resize((1080, 1080), Image.LANCZOS)
+
+        # Dark gradient overlay (bottom 35%) using RGBA compositing
+        overlay_h = int(1080 * 0.35)
+        overlay_top = 1080 - overlay_h
+        overlay = Image.new("RGBA", (1080, 1080), (0, 0, 0, 0))
+        grad_draw = ImageDraw.Draw(overlay)
+        for y in range(overlay_top, 1080):
+            alpha = int(200 * (y - overlay_top) / overlay_h)
+            grad_draw.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, overlay)
+        img = img.convert("RGB")
+
+        draw = ImageDraw.Draw(img)
+
+        # Red accent bar at very bottom
+        draw.rectangle([(0, 1040), (1080, 1080)], fill=(204, 0, 0))
+
+        # Try to load a system font (Ubuntu runner has DejaVu)
+        try:
+            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+            font_url = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
+            font_hl = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        except Exception:
+            font_bold = ImageFont.load_default()
+            font_url = font_bold
+            font_hl = font_bold
+
+        # Website URL on red bar
+        draw.text((540, 1060), "indiabbcnews.com", fill="white", font=font_url, anchor="mm")
+
+        # Headline text (truncated, 2 lines max)
+        hl = headline[:80] + ("…" if len(headline) > 80 else "")
+        words = hl.split()
+        lines = []
+        current = ""
+        for word in words:
+            test = (current + " " + word).strip()
+            if len(test) <= 38:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+            if len(lines) == 2:
+                current = ""
+                break
+        if current:
+            lines.append(current)
+        lines = lines[:2]
+
+        y_text = 970 - (len(lines) * 42)
+        for line in lines:
+            draw.text((40, y_text), line, fill="white", font=font_hl)
+            y_text += 42
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=88)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"[WARN] Instagram image branding failed: {e} — using original")
+        return image_bytes
+
+
 # ── Instagram (via instagrapi — no Facebook token needed) ────────────────────
 
 def post_instagram(headline, meta_description, post_url, image_url, tags):
@@ -123,9 +210,12 @@ def post_instagram(headline, meta_description, post_url, image_url, tags):
         img_resp = requests.get(image_url, timeout=15)
         img_resp.raise_for_status()
 
+        # Brand the image for Instagram (square + overlay + URL)
+        branded = _make_instagram_image(img_resp.content, headline)
+
         # Save to temp file (instagrapi needs a file path)
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp.write(img_resp.content)
+            tmp.write(branded)
             tmp_path = tmp.name
 
         # Login and post
