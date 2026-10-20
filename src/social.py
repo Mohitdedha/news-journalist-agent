@@ -1,17 +1,18 @@
 """
 Social media auto-posting for IndiaBBCNews.
-Posts to Facebook Page, Instagram, Twitter/X, and Telegram after each article.
+Posts to Facebook Page, Instagram (via instagrapi), Twitter/X, and Telegram.
 
 Secrets needed in GitHub (all optional — skipped if not set):
-  FB_PAGE_ID           — Facebook Page numeric ID
-  FB_PAGE_ACCESS_TOKEN — Long-lived Page Access Token
-  IG_ACCOUNT_ID        — Instagram Business Account ID (from Meta Business Suite)
-  TWITTER_API_KEY      — Twitter API Key
-  TWITTER_API_SECRET   — Twitter API Secret
-  TWITTER_ACCESS_TOKEN      — Twitter Access Token
-  TWITTER_ACCESS_SECRET     — Twitter Access Token Secret
-  TELEGRAM_BOT_TOKEN   — Telegram Bot Token (from @BotFather)
-  TELEGRAM_CHANNEL_ID  — Telegram Channel username e.g. @indiabbcnews or -100xxx
+  FB_PAGE_ID               — Facebook Page numeric ID
+  FB_PAGE_ACCESS_TOKEN     — Long-lived Page Access Token
+  IG_USERNAME              — Instagram username (e.g. indiabbcnews2026)
+  IG_PASSWORD              — Instagram password
+  TWITTER_API_KEY          — Twitter API Key
+  TWITTER_API_SECRET       — Twitter API Secret
+  TWITTER_ACCESS_TOKEN     — Twitter Access Token
+  TWITTER_ACCESS_SECRET    — Twitter Access Token Secret
+  TELEGRAM_BOT_TOKEN       — Telegram Bot Token (from @BotFather)
+  TELEGRAM_CHANNEL_ID      — Telegram Channel username e.g. @indiabbcnews or -100xxx
 """
 import os
 import time
@@ -20,7 +21,8 @@ import requests
 # ── Credentials (from environment / GitHub Secrets) ─────────────────────────
 FB_PAGE_ID           = os.environ.get("FB_PAGE_ID", "")
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
-IG_ACCOUNT_ID        = os.environ.get("IG_ACCOUNT_ID", "")
+IG_USERNAME          = os.environ.get("IG_USERNAME", "")
+IG_PASSWORD          = os.environ.get("IG_PASSWORD", "")
 TWITTER_API_KEY      = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_API_SECRET   = os.environ.get("TWITTER_API_SECRET", "")
 TWITTER_ACCESS_TOKEN = os.environ.get("TWITTER_ACCESS_TOKEN", "")
@@ -101,48 +103,45 @@ def post_facebook(headline, meta_description, post_url, image_url, tags):
         return False
 
 
-# ── Instagram ────────────────────────────────────────────────────────────────
+# ── Instagram (via instagrapi — no Facebook token needed) ────────────────────
 
 def post_instagram(headline, meta_description, post_url, image_url, tags):
-    if not IG_ACCOUNT_ID or not FB_PAGE_ACCESS_TOKEN:
-        print("[SOCIAL] Instagram: credentials not set — skipping")
+    if not IG_USERNAME or not IG_PASSWORD:
+        print("[SOCIAL] Instagram: IG_USERNAME/IG_PASSWORD not set — skipping")
         return False
     if not image_url:
         print("[SOCIAL] Instagram: no image URL — skipping (image required)")
         return False
     try:
+        from instagrapi import Client
+        import io
+        import tempfile
+
         caption = _make_caption(headline, meta_description, post_url, tags, "instagram")
-        # Step 1: create media container
-        r1 = requests.post(
-            f"{GRAPH_API}/{IG_ACCOUNT_ID}/media",
-            data={
-                "image_url": image_url,
-                "caption": caption,
-                "access_token": FB_PAGE_ACCESS_TOKEN,
-            },
-            timeout=20
-        )
-        r1.raise_for_status()
-        container_id = r1.json().get("id")
-        if not container_id:
-            print(f"[WARN] Instagram container creation failed: {r1.text[:200]}")
-            return False
 
-        time.sleep(3)  # wait for container to be ready
+        # Download the image
+        img_resp = requests.get(image_url, timeout=15)
+        img_resp.raise_for_status()
 
-        # Step 2: publish
-        r2 = requests.post(
-            f"{GRAPH_API}/{IG_ACCOUNT_ID}/media_publish",
-            data={
-                "creation_id": container_id,
-                "access_token": FB_PAGE_ACCESS_TOKEN,
-            },
-            timeout=20
-        )
-        r2.raise_for_status()
-        media_id = r2.json().get("id", "?")
-        print(f"[SOCIAL] Instagram posted: {media_id}")
+        # Save to temp file (instagrapi needs a file path)
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp.write(img_resp.content)
+            tmp_path = tmp.name
+
+        # Login and post
+        cl = Client()
+        cl.login(IG_USERNAME, IG_PASSWORD)
+        media = cl.photo_upload(tmp_path, caption=caption)
+        print(f"[SOCIAL] Instagram posted: {media.pk}")
+
+        # Cleanup
+        import os as _os
+        _os.unlink(tmp_path)
         return True
+
+    except ImportError:
+        print("[WARN] Instagram: instagrapi not installed — skipping")
+        return False
     except Exception as e:
         print(f"[WARN] Instagram post failed: {e}")
         return False
