@@ -2,6 +2,7 @@
 Main newsroom orchestrator.
 Called by GitHub Actions on a cron schedule.
 """
+import re
 import sys
 import os
 import time
@@ -18,6 +19,7 @@ from publisher import create_post, check_duplicate_in_wp, test_connection
 from seo import submit_indexnow, ping_sitemap, ping_rpc_services, submit_to_aggregators
 from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
 from social import post_to_all
+from linker import add_internal_links
 
 PUBLISH_STATUS = os.environ.get("PUBLISH_STATUS", "draft")  # override per run
 MAX_STORIES = int(os.environ.get("MAX_STORIES", "2"))
@@ -102,6 +104,19 @@ def run():
                     print("[WAIT] Rate limit hit — waiting 90s before next story...")
                     time.sleep(90)
                 continue
+
+            # 4a. Guard: skip blank/too-short content
+            content_len = len(re.sub(r'<[^>]+>', '', article.get("content_html", "")))
+            if content_len < 150:
+                print(f"[SKIP] Content too short ({content_len} chars) — not publishing blank post")
+                skipped_count += 1
+                continue
+
+            # 4b. Add internal links to related articles
+            print("[LINK] Adding internal links...")
+            article["content_html"] = add_internal_links(
+                article["content_html"], article["headline"]
+            )
 
             # 5. Find and process image
             print("[IMAGE] Searching for relevant image...")

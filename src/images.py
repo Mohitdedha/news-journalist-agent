@@ -71,9 +71,15 @@ def search_unsplash(query, per_page=20, randomize_page=False):
             combined = photo_tags | set(alt_desc.split()) | set(desc.split())
             if combined & _TEXT_KEYWORDS:
                 continue
+            w = r.get("width", 0)
+            h = r.get("height", 0)
+            # Prefer full/regular over small; skip tiny images
+            if w < 800 or h < 400:
+                continue
+            url = r.get("urls", {}).get("full", "") or r.get("urls", {}).get("regular", "")
             photos.append({
                 "id": r.get("id", ""),
-                "url": r.get("urls", {}).get("regular", ""),
+                "url": url,
             })
         return photos
     except Exception as e:
@@ -230,5 +236,36 @@ def find_and_process_image(image_query, headline, context, history=None):
             print(f"[INFO] Image found (query='{query}', id={photo_id}): {headline[:50]}")
             return processed, alt_text, caption
 
+    # Unsplash exhausted — generate image with Pollinations.ai (free, no API key)
+    print("[INFO] Unsplash exhausted — trying AI-generated image (Pollinations.ai)...")
+    ai_image = _generate_ai_image(image_query or headline)
+    if ai_image:
+        processed = process_image(ai_image)
+        if processed:
+            print(f"[INFO] AI image generated for: {headline[:50]}")
+            return processed, headline[:100], ""
+
     print("[WARN] No suitable image found.")
     return None, None, None
+
+
+def _generate_ai_image(prompt):
+    """
+    Generate image using Pollinations.ai — completely free, no API key needed.
+    Returns raw image bytes or None.
+    """
+    try:
+        import urllib.parse
+        # Clean prompt: remove special chars, keep it descriptive
+        clean = re.sub(r'[^\w\s]', ' ', prompt)
+        clean = re.sub(r'\s+', ' ', clean).strip()[:120]
+        # Add style guidance for news photography look
+        full_prompt = f"{clean}, professional news photography, high quality, photorealistic"
+        encoded = urllib.parse.quote(full_prompt)
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=630&nologo=true&seed={random.randint(1,9999)}"
+        resp = requests.get(url, timeout=60)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            return resp.content
+    except Exception as e:
+        print(f"[WARN] AI image generation failed: {e}")
+    return None
