@@ -2,8 +2,14 @@ name: News Journalist Agent
 
 on:
   schedule:
-    # Runs every 30 minutes
-    - cron: '*/30 * * * *'
+    # UK morning peak (7am GMT / 12:30pm IST)
+    - cron: '0 7 * * *'
+    # US East morning + UK lunch (12pm UTC / 5:30pm IST)
+    - cron: '0 12 * * *'
+    # US afternoon (3pm UTC / 8:30pm IST)
+    - cron: '0 15 * * *'
+    # US prime time / evening (8pm UTC / 1:30am IST+1)
+    - cron: '0 20 * * *'
   workflow_dispatch:
     inputs:
       publish_status:
@@ -58,7 +64,7 @@ jobs:
           SMTP_HOST: smtp.gmail.com
           SMTP_PORT: "587"
           PUBLISH_STATUS: ${{ inputs.publish_status || 'publish' }}
-          MAX_STORIES: ${{ inputs.max_stories || '5' }}
+          MAX_STORIES: ${{ inputs.max_stories || '3' }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
