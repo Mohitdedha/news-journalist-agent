@@ -97,6 +97,77 @@ def download_image(url, timeout=15):
         return None
 
 
+def _brand_image(img):
+    """
+    Add indiabbcnews.com branding to a PIL Image (already 1200x630).
+    - Subtle dark gradient at bottom 25%
+    - Red accent bar (bottom 28px) with 'indiabbcnews.com' text
+    Returns branded PIL Image.
+    """
+    try:
+        from PIL import ImageDraw, ImageFont
+
+        W, H = img.size  # 1200 x 630
+
+        # ── Gradient overlay (bottom 25%) ────────────────────────────────────
+        grad_h = int(H * 0.25)
+        grad_top = H - grad_h
+        overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw_ov = ImageDraw.Draw(overlay)
+        for y in range(grad_top, H):
+            alpha = int(140 * (y - grad_top) / grad_h)
+            draw_ov.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(img, overlay).convert("RGB")
+
+        draw = ImageDraw.Draw(img)
+
+        # ── Red accent bar at very bottom ────────────────────────────────────
+        bar_h = 30
+        draw.rectangle([(0, H - bar_h), (W, H)], fill=(204, 0, 0))
+
+        # ── Font: try system fonts, fall back to default ─────────────────────
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Ubuntu/Actions
+            "C:/Windows/Fonts/arialbd.ttf",                           # Windows
+            "C:/Windows/Fonts/arial.ttf",
+        ]
+        font_url = None
+        for fp in font_paths:
+            try:
+                font_url = ImageFont.truetype(fp, 18)
+                break
+            except Exception:
+                pass
+        if font_url is None:
+            font_url = ImageFont.load_default()
+
+        # ── Website URL centred on red bar ───────────────────────────────────
+        text = "indiabbcnews.com"
+        # Get text width for centering
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font_url)
+            tw = bbox[2] - bbox[0]
+        except Exception:
+            tw = len(text) * 10
+        tx = (W - tw) // 2
+        ty = H - bar_h + (bar_h - 20) // 2
+        draw.text((tx, ty), text, fill="white", font=font_url)
+
+        # ── Small logo text top-left corner ──────────────────────────────────
+        try:
+            font_logo = ImageFont.truetype(font_paths[0] if font_url != ImageFont.load_default() else "", 14)
+        except Exception:
+            font_logo = font_url
+        draw.rectangle([(0, 0), (160, 26)], fill=(0, 0, 0, 140))
+        draw.text((8, 5), "INDIA BBC NEWS", fill=(255, 50, 50), font=font_logo)
+
+        return img
+    except Exception as e:
+        print(f"[WARN] Branding failed: {e}")
+        return img
+
+
 def process_image(image_bytes):
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -116,9 +187,12 @@ def process_image(image_bytes):
 
         img = img.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
 
+        # Add indiabbcnews.com branding to every image
+        img = _brand_image(img)
+
         buf = io.BytesIO()
-        quality = 82
-        while quality >= 50:
+        quality = 85
+        while quality >= 55:
             buf.seek(0)
             buf.truncate()
             img.save(buf, format="JPEG", quality=quality, optimize=True)
@@ -127,7 +201,7 @@ def process_image(image_bytes):
             quality -= 8
 
         result = buf.getvalue()
-        print(f"[INFO] Image processed: 1200x630, {len(result)//1024}KB")
+        print(f"[INFO] Image processed+branded: {TARGET_WIDTH}x{TARGET_HEIGHT}, {len(result)//1024}KB")
         return result
     except Exception as e:
         print(f"[WARN] Image processing error: {e}")
