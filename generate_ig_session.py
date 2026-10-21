@@ -26,6 +26,7 @@ password = getpass.getpass("Instagram password: ")
 print("\nLogging in (may ask for verification code)...")
 
 cl = Client()
+# Use instagrapi's default device profile — has the correct bloks_versioning_id
 try:
     cl.login(username, password)
 except Exception as e:

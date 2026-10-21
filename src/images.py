@@ -33,6 +33,12 @@ def save_used_photos(history):
     history["used_photo_ids"] = all_ids[-500:]
 
 
+_TEXT_KEYWORDS = {"bible","scripture","text","book","manuscript","letter","document",
+                  "newspaper","magazine","page","word","writing","quote","sign","poster",
+                  "whiteboard","chalkboard","code","screen","monitor","data","chart",
+                  "graph","infographic","map","diagram","logo","icon","flag"}
+
+
 def search_unsplash(query, per_page=20, randomize_page=False):
     if not UNSPLASH_ACCESS_KEY:
         print("[WARN] UNSPLASH_ACCESS_KEY not set")
@@ -43,7 +49,13 @@ def search_unsplash(query, per_page=20, randomize_page=False):
         resp = requests.get(
             UNSPLASH_SEARCH,
             headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
-            params={"query": query, "per_page": per_page, "orientation": "landscape", "page": page},
+            params={
+                "query": query,
+                "per_page": per_page,
+                "orientation": "landscape",
+                "page": page,
+                "content_filter": "high",  # filter unsafe/irrelevant content
+            },
             timeout=10
         )
         resp.raise_for_status()
@@ -52,6 +64,13 @@ def search_unsplash(query, per_page=20, randomize_page=False):
         random.shuffle(results)
         photos = []
         for r in results:
+            # Skip photos whose tags suggest text/documents — they look terrible as news images
+            photo_tags = {t.get("title", "").lower() for t in r.get("tags", [])}
+            alt_desc = (r.get("alt_description") or "").lower()
+            desc = (r.get("description") or "").lower()
+            combined = photo_tags | set(alt_desc.split()) | set(desc.split())
+            if combined & _TEXT_KEYWORDS:
+                continue
             photos.append({
                 "id": r.get("id", ""),
                 "url": r.get("urls", {}).get("regular", ""),
