@@ -1,5 +1,5 @@
 """
-AI article writer using Groq (free tier).
+AI article writer — Groq primary, Gemini Flash fallback.
 Uses TWO separate API calls to avoid JSON truncation:
   Call 1 — plain HTML article body (no JSON risk, any length)
   Call 2 — tiny JSON metadata (headline, meta, tags, image_query — ~80 tokens)
@@ -11,6 +11,9 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from config import GROQ_API_KEY
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 _GROQ_MODELS = [
@@ -77,6 +80,40 @@ def _groq_call(prompt, max_tokens=700, temperature=0.4):
         raise RuntimeError("rate_limit")
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def _gemini_call(prompt, max_tokens=700):
+    """Gemini Flash fallback — free tier, high TPM limit."""
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY not set")
+    resp = requests.post(
+        f"{_GEMINI_URL}?key={GEMINI_API_KEY}",
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.4},
+        },
+        timeout=60,
+    )
+    if resp.status_code == 429:
+        raise RuntimeError("rate_limit")
+    resp.raise_for_status()
+    candidates = resp.json().get("candidates", [])
+    if not candidates:
+        raise RuntimeError("Gemini returned no candidates")
+    return candidates[0]["content"]["parts"][0]["text"].strip()
+
+
+def _ai_call(prompt, max_tokens=700, label=""):
+    """Try Groq first, fall back to Gemini on rate limit."""
+    try:
+        result = _groq_call(prompt, max_tokens=max_tokens)
+        return result, "groq"
+    except RuntimeError as e:
+        if "rate_limit" in str(e) and GEMINI_API_KEY:
+            print(f"[WARN] {label} Groq rate limited — switching to Gemini...")
+            result = _gemini_call(prompt, max_tokens=max_tokens)
+            return result, "gemini"
+        raise
 
 
 # ── Prompt 1: plain HTML content only ──────────────────────────────────────
@@ -174,16 +211,23 @@ def fetch_article_text(url, timeout=15):
         return ""
 
 
-def _groq_call_with_retry(prompt, max_tokens, label, max_retries=4, base_wait=30):
-    """Call Groq with its own retry loop — does NOT re-run a previous step on rate limit."""
+def _groq_call_with_retry(prompt, max_tokens, label, max_retries=3, base_wait=30):
+    """
+    Call AI with retry loop — Groq primary, Gemini fallback on rate limit.
+    Does NOT re-run a previous step on rate limit.
+    """
     last_error = None
     for attempt in range(max_retries):
         try:
-            return _groq_call(prompt, max_tokens=max_tokens)
+            result, provider = _ai_call(prompt, max_tokens=max_tokens, label=label)
+            if provider == "gemini":
+                print(f"[INFO] {label} served by Gemini fallback")
+            return result
         except RuntimeError as e:
             if "rate_limit" in str(e):
-                wait = base_wait * (attempt + 1)  # 30s, 60s, 90s, 120s
-                print(f"[WARN] {label} rate limited (attempt {attempt+1}), waiting {wait}s...")
+                # Both Groq and Gemini rate limited — wait and retry
+                wait = base_wait * (attempt + 1)
+                print(f"[WARN] {label} all providers rate limited (attempt {attempt+1}), waiting {wait}s...")
                 time.sleep(wait)
             else:
                 raise
