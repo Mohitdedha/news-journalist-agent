@@ -107,9 +107,7 @@ STRUCTURE:
 <p>Details, quotes, reaction.</p>
 <h2>Short Subhead</h2>
 <p>What happens next or broader impact. No "In conclusion".</p>
-<hr>
-<p><em><strong>Source: {source_name}</strong></em></p>
-<p><em>This article was compiled by the IndiaBBCNews editorial system from verified international news sources. Facts have been independently reviewed. Original reporting: {source_name}.</em></p>
+<p><em>Source: {source_name}</em></p>
 
 OUTPUT: Only the HTML. No JSON. No explanation. Start with <p>.
 
