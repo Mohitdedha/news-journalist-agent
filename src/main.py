@@ -105,10 +105,16 @@ def run():
                     time.sleep(90)
                 continue
 
-            # 4a. Guard: skip blank/too-short content
-            content_len = len(re.sub(r'<[^>]+>', '', article.get("content_html", "")))
-            if content_len < 800:
-                print(f"[SKIP] Content too short ({content_len} chars) — not publishing blank post")
+            # 4a. Guard: skip blank/too-short content (check TEXT not HTML)
+            raw_text = re.sub(r'<[^>]+>', '', article.get("content_html", "")).strip()
+            content_len = len(raw_text)
+            if content_len < 600:
+                print(f"[SKIP] Content text too short ({content_len} chars) — not publishing")
+                skipped_count += 1
+                continue
+            # Catch "undefined" even when surrounded by HTML wrappers
+            if raw_text.lower().startswith("undefined") or raw_text.strip().lower() == "undefined":
+                print(f"[SKIP] Content is 'undefined' placeholder — not publishing")
                 skipped_count += 1
                 continue
 
