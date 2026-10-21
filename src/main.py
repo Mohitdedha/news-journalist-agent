@@ -20,7 +20,7 @@ from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
 from social import post_to_all
 
 PUBLISH_STATUS = os.environ.get("PUBLISH_STATUS", "draft")  # override per run
-MAX_STORIES = int(os.environ.get("MAX_STORIES", "5"))
+MAX_STORIES = int(os.environ.get("MAX_STORIES", "2"))
 
 
 def run():
@@ -160,9 +160,9 @@ def run():
             traceback.print_exc()
             errors.append(err)
 
-        # Wait for Groq OTPM window to reset (1000 tok/min limit) — skip after last story
+        # Small gap between stories to avoid Groq burst limit
         if i < len(stories) - 1:
-            time.sleep(65)
+            time.sleep(10)
 
     # 9. Batch SEO submission
     if new_post_urls:

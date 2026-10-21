@@ -2,8 +2,8 @@ name: News Journalist Agent
 
 on:
   schedule:
-    # Runs every hour at minute 15 (UTC)
-    - cron: '15 * * * *'
+    # Runs every 15 minutes — picks up latest news fast
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       publish_status:
@@ -15,7 +15,7 @@ on:
       max_stories:
         description: 'Max stories per run (1-10)'
         required: true
-        default: '3'
+        default: '2'
 
 jobs:
   publish-news:
