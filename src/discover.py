@@ -64,6 +64,45 @@ def fetch_feed(source):
         return []
 
 
+def fetch_google_trends_stories(geo="IN", max_stories=5):
+    """
+    Fetch trending topics from Google Trends daily RSS.
+    Returns story candidates from trending searches.
+    """
+    url = f"https://trends.google.com/trends/trendingsearches/daily/rss?geo={geo}"
+    stories = []
+    try:
+        feed = feedparser.parse(
+            url,
+            agent="IndiaBBCNews/1.0 (newsroom bot; +https://indiabbcnews.com)",
+        )
+        for entry in feed.entries[:max_stories]:
+            title = getattr(entry, "title", "").strip()
+            if not title or len(title) < 5:
+                continue
+            # Google Trends entries have news articles in description
+            summary = getattr(entry, "summary", "") or ""
+            summary = re.sub(r'<[^>]+>', '', summary).strip()
+            link = getattr(entry, "link", "") or f"https://www.google.com/search?q={title.replace(' ', '+')}&tbm=nws"
+
+            stories.append({
+                "url": link,
+                "norm_url": normalize_url(link) + f"_trends_{hashlib.md5(title.encode()).hexdigest()[:8]}",
+                "title": f"Breaking: {title}",
+                "summary": summary[:500] or f"Trending topic in India: {title}. Latest news and updates.",
+                "source_name": "Google Trends India",
+                "source_category": "global",
+                "wp_category_id": 1,
+                "published": datetime.now(timezone.utc).isoformat(),
+                "fingerprint": content_fingerprint(title),
+                "image_query": title,
+            })
+        print(f"[TRENDS] Found {len(stories)} trending topics from Google Trends ({geo})")
+    except Exception as e:
+        print(f"[WARN] Google Trends fetch error: {e}")
+    return stories
+
+
 def discover_stories(max_per_run=10):
     """Return fresh, non-duplicate candidate stories."""
     sources_cfg = load_sources()
@@ -73,6 +112,14 @@ def discover_stories(max_per_run=10):
     seen_titles = list(history.get("published_titles", []))
 
     candidates = []
+
+    # Add Google Trends stories (top 3)
+    trend_stories = fetch_google_trends_stories(geo="IN", max_stories=3)
+    for ts in trend_stories:
+        norm = ts["norm_url"]
+        too_similar = any(title_similarity(ts["title"], t) > 0.65 for t in seen_titles[-200:])
+        if norm not in seen_urls and not too_similar:
+            candidates.append(ts)
 
     for source in sources_cfg["rss_feeds"]:
         entries = fetch_feed(source)

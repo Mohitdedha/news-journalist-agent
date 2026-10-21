@@ -93,6 +93,45 @@ def ping_rpc_services(post_title, post_url):
     print(f"[SEO] RPC pings sent: {ok}/{len(endpoints)} services responded")
 
 
+def submit_to_google_indexing(post_url):
+    """
+    Submit URL via Google Indexing API (free for news/job sites).
+    Requires GOOGLE_INDEXING_KEY env var (service account JSON as string).
+    Falls back gracefully if not configured.
+    """
+    import os, json
+    key_json = os.environ.get("GOOGLE_INDEXING_KEY", "")
+    if not key_json:
+        return  # not configured, skip silently
+
+    try:
+        import google.oauth2.service_account as sa
+        import google.auth.transport.requests as ga_req
+
+        creds_info = json.loads(key_json)
+        creds = sa.Credentials.from_service_account_info(
+            creds_info,
+            scopes=["https://www.googleapis.com/auth/indexing"]
+        )
+        creds.refresh(ga_req.Request())
+        token = creds.token
+
+        resp = requests.post(
+            "https://indexing.googleapis.com/v3/urlNotifications:publish",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"url": post_url, "type": "URL_UPDATED"},
+            timeout=15
+        )
+        if resp.status_code == 200:
+            print(f"[OK] Google Indexing API: {post_url}")
+        else:
+            print(f"[WARN] Google Indexing API {resp.status_code}: {resp.text[:100]}")
+    except ImportError:
+        pass  # google-auth not installed
+    except Exception as e:
+        print(f"[WARN] Google Indexing API error: {e}")
+
+
 def submit_to_aggregators(post_url, post_title):
     """
     Submit new article URL to free content aggregators & RSS readers.

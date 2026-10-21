@@ -16,7 +16,7 @@ from discover import discover_stories
 from writer import write_article
 from images import find_and_process_image, upload_to_wordpress, init_used_photos, save_used_photos
 from publisher import create_post, check_duplicate_in_wp, test_connection
-from seo import submit_indexnow, ping_sitemap, ping_rpc_services, submit_to_aggregators
+from seo import submit_indexnow, ping_sitemap, ping_rpc_services, submit_to_aggregators, submit_to_google_indexing
 from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
 from social import post_to_all
 from linker import add_internal_links
@@ -169,6 +169,7 @@ def run():
                 post_to_all(article, post_url, image_url=featured_media_url)
                 ping_rpc_services(article["headline"], post_url)
                 submit_to_aggregators(post_url, article["headline"])
+                submit_to_google_indexing(post_url)
 
             # 9. SEO discovery
             if PUBLISH_STATUS == "publish" and post_url:
