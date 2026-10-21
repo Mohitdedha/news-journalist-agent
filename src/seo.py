@@ -47,6 +47,7 @@ def ping_sitemap():
     sitemap_url = f"{WP_URL}/sitemap_index.xml"
     ping_urls = [
         f"https://www.bing.com/ping?sitemap={sitemap_url}",
+        f"https://www.google.com/ping?sitemap={sitemap_url}",
     ]
     for url in ping_urls:
         try:
@@ -55,6 +56,41 @@ def ping_sitemap():
         except Exception as e:
             print(f"[WARN] Sitemap ping error: {e}")
         time.sleep(1)
+
+
+def ping_rpc_services(post_title, post_url):
+    """
+    Ping blog-discovery RPC services (Ping-O-Matic, Twingly, etc.)
+    Notifies aggregators & backlink crawlers about new content.
+    """
+    xml = f"""<?xml version="1.0"?>
+<methodCall>
+  <methodName>weblogUpdates.extendedPing</methodName>
+  <params>
+    <param><value><string>India BBC News</string></value></param>
+    <param><value><string>https://indiabbcnews.com</string></value></param>
+    <param><value><string>{post_url}</string></value></param>
+    <param><value><string>https://indiabbcnews.com/sitemap_index.xml</string></value></param>
+  </params>
+</methodCall>"""
+
+    endpoints = [
+        "http://rpc.pingomatic.com/",
+        "http://ping.blogs.com/weblogUpdates.extendedPing",
+        "http://blogsearch.google.com/ping/RPC2",
+        "http://rpc.twingly.com/",
+        "http://api.feedster.com/ping",
+    ]
+    headers = {"Content-Type": "text/xml"}
+    ok = 0
+    for ep in endpoints:
+        try:
+            r = requests.post(ep, data=xml.encode("utf-8"), headers=headers, timeout=8)
+            if r.status_code == 200:
+                ok += 1
+        except Exception:
+            pass
+    print(f"[SEO] RPC pings sent: {ok}/{len(endpoints)} services responded")
 
 
 def generate_indexnow_key_file(key):

@@ -15,7 +15,7 @@ from discover import discover_stories
 from writer import write_article
 from images import find_and_process_image, upload_to_wordpress, init_used_photos, save_used_photos
 from publisher import create_post, check_duplicate_in_wp, test_connection
-from seo import submit_indexnow, ping_sitemap
+from seo import submit_indexnow, ping_sitemap, ping_rpc_services
 from monitor import log_run_summary, alert_wordpress_down, alert_ai_quota
 from social import post_to_all
 
@@ -141,10 +141,11 @@ def run():
             save_used_photos(history)  # persist used photo IDs
             save_history(history)
 
-            # 8. Social media posting
+            # 8. Social media posting + RPC backlink pings
             if PUBLISH_STATUS == "publish" and post_url:
                 print("[SOCIAL] Posting to social media...")
                 post_to_all(article, post_url, image_url=featured_media_url)
+                ping_rpc_services(article["headline"], post_url)
 
             # 9. SEO discovery
             if PUBLISH_STATUS == "publish" and post_url:

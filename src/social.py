@@ -33,6 +33,24 @@ TELEGRAM_CHANNEL_ID  = os.environ.get("TELEGRAM_CHANNEL_ID", "")
 
 GRAPH_API = "https://graph.facebook.com/v19.0"
 
+REDDIT_CLIENT_ID     = os.environ.get("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
+REDDIT_USERNAME      = os.environ.get("REDDIT_USERNAME", "")
+REDDIT_PASSWORD      = os.environ.get("REDDIT_PASSWORD", "")
+
+# Map article tags/categories → subreddits (post to first matching one)
+_TAG_SUBREDDIT_MAP = [
+    ({"india", "indian", "modi", "delhi", "mumbai", "bjp", "congress"}, "india"),
+    ({"technology", "tech", "ai", "artificial intelligence", "elon musk", "tesla", "spacex", "openai", "google", "apple", "microsoft"}, "technology"),
+    ({"crypto", "bitcoin", "ethereum", "blockchain"}, "CryptoCurrency"),
+    ({"economy", "gdp", "inflation", "imf", "world bank", "trade"}, "Economics"),
+    ({"science", "climate", "health", "medicine", "nasa", "space"}, "science"),
+    ({"politics", "election", "president", "prime minister", "parliament", "congress", "senate"}, "worldnews"),
+    ({"war", "military", "ukraine", "russia", "israel", "conflict", "attack"}, "worldnews"),
+    ({"sports", "cricket", "football", "ipl", "fifa", "olympics"}, "sports"),
+]
+_DEFAULT_SUBREDDIT = "worldnews"
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -337,6 +355,52 @@ def post_telegram(headline, meta_description, post_url, image_url, tags):
         return False
 
 
+# ── Reddit ───────────────────────────────────────────────────────────────────
+
+def _pick_subreddit(tags):
+    """Return the best subreddit for the given tag list."""
+    tag_set = {t.lower() for t in (tags or [])}
+    for keywords, subreddit in _TAG_SUBREDDIT_MAP:
+        if keywords & tag_set:
+            return subreddit
+    return _DEFAULT_SUBREDDIT
+
+
+def post_reddit(headline, meta_description, post_url, tags):
+    if not all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD]):
+        print("[SOCIAL] Reddit: credentials not set — skipping")
+        return False
+    try:
+        import praw
+        reddit = praw.Reddit(
+            client_id=REDDIT_CLIENT_ID,
+            client_secret=REDDIT_CLIENT_SECRET,
+            username=REDDIT_USERNAME,
+            password=REDDIT_PASSWORD,
+            user_agent=f"IndiaBBCNews:v1.0 (by u/{REDDIT_USERNAME})",
+        )
+        subreddit_name = _pick_subreddit(tags)
+        subreddit = reddit.subreddit(subreddit_name)
+        submission = subreddit.submit(
+            title=headline[:300],
+            url=post_url,
+            resubmit=False,
+            nsfw=False,
+        )
+        print(f"[SOCIAL] Reddit posted: r/{subreddit_name} → {submission.shortlink}")
+        return True
+    except ImportError:
+        print("[WARN] Reddit: praw not installed — skipping")
+        return False
+    except Exception as e:
+        err = str(e).lower()
+        if "already been submitted" in err or "duplicate" in err:
+            print(f"[SOCIAL] Reddit: duplicate URL, skipping")
+            return False
+        print(f"[WARN] Reddit post failed: {e}")
+        return False
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 def post_to_all(article, post_url, image_url=None):
@@ -353,6 +417,7 @@ def post_to_all(article, post_url, image_url=None):
     results["instagram"] = post_instagram(headline, meta_desc, post_url, image_url, tags)
     results["twitter"]   = post_twitter(headline, meta_desc, post_url, image_url, tags)
     results["telegram"]  = post_telegram(headline, meta_desc, post_url, image_url, tags)
+    results["reddit"]    = post_reddit(headline, meta_desc, post_url, tags)
 
     ok  = [p for p, v in results.items() if v]
     skipped = [p for p, v in results.items() if not v]
