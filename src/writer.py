@@ -174,12 +174,35 @@ def fetch_article_text(url, timeout=15):
         return ""
 
 
+def _groq_call_with_retry(prompt, max_tokens, label, max_retries=4, base_wait=30):
+    """Call Groq with its own retry loop — does NOT re-run a previous step on rate limit."""
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            return _groq_call(prompt, max_tokens=max_tokens)
+        except RuntimeError as e:
+            if "rate_limit" in str(e):
+                wait = base_wait * (attempt + 1)  # 30s, 60s, 90s, 120s
+                print(f"[WARN] {label} rate limited (attempt {attempt+1}), waiting {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+        except Exception as e:
+            last_error = e
+            print(f"[WARN] {label} error attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(30)
+            else:
+                raise RuntimeError(f"{label} failed after {max_retries} attempts: {last_error}")
+    raise RuntimeError(f"{label} rate-limited after {max_retries} attempts")
+
+
 def write_article(story, max_retries=3):
     """
     Two-step generation:
       Step 1 — write HTML content (plain text output, no JSON risk)
       Step 2 — write metadata JSON (tiny ~80 token response)
-    Returns article dict or raises.
+    Each step has its own retry loop so a Step 2 rate limit doesn't re-run Step 1.
     """
     article_text = fetch_article_text(story["url"])
     title = story["title"]
@@ -193,78 +216,52 @@ def write_article(story, max_retries=3):
     )
     meta_prompt = _META_PROMPT.format(title=title, summary=summary)
 
-    last_error = None
-    for attempt in range(max_retries):
-        try:
-            # ── Step 1: Generate HTML content ──────────────────────────────
-            print(f"[WRITE] Step 1: generating content (attempt {attempt+1})...")
-            content_html = _groq_call(content_prompt, max_tokens=2500)
+    # ── Step 1: Generate HTML content (own retry loop) ──────────────────
+    print("[WRITE] Step 1: generating content...")
+    content_html = _groq_call_with_retry(content_prompt, max_tokens=2500, label="Step1-content", base_wait=60)
 
-            # Strip any accidental JSON/markdown wrapping
-            content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)
-            content_html = re.sub(r'```\s*$', '', content_html, flags=re.MULTILINE).strip()
+    # Strip any accidental JSON/markdown wrapping
+    content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)
+    content_html = re.sub(r'```\s*$', '', content_html, flags=re.MULTILINE).strip()
 
-            # Validate content
-            if not content_html or len(content_html) < 200:
-                raise ValueError(f"Content too short: {len(content_html)} chars")
-            # Catch "undefined"/"null" whether bare or wrapped in HTML tags
-            text_only = re.sub(r'<[^>]+>', '', content_html).strip().lower()
-            if text_only in ("undefined", "null", "none", "") or len(text_only) < 150:
-                raise ValueError(f"Content is placeholder/empty: '{text_only[:60]}'")
-            if content_html.lower().strip() in ("undefined", "null", "none"):
-                raise ValueError(f"Content is placeholder: {content_html[:50]}")
-            if not content_html.startswith("<"):
-                # Model returned plain text — wrap it
-                content_html = "<p>" + content_html.replace("\n\n", "</p><p>") + "</p>"
+    # Validate content
+    if not content_html or len(content_html) < 200:
+        raise ValueError(f"Content too short: {len(content_html)} chars")
+    text_only = re.sub(r'<[^>]+>', '', content_html).strip().lower()
+    if text_only in ("undefined", "null", "none", "") or len(text_only) < 150:
+        raise ValueError(f"Content is placeholder/empty: '{text_only[:60]}'")
+    if not content_html.startswith("<"):
+        content_html = "<p>" + content_html.replace("\n\n", "</p><p>") + "</p>"
 
-            print(f"[WRITE] Content OK: {len(content_html)} chars")
+    print(f"[WRITE] Content OK: {len(content_html)} chars")
 
-            # ── Small wait so Step 2 uses a fresh OTPM slot ────────────────
-            time.sleep(5)
+    # ── Wait between Step 1 and Step 2 so TPM window resets ────────────
+    time.sleep(30)
 
-            # ── Step 2: Generate metadata ───────────────────────────────────
-            print("[WRITE] Step 2: generating metadata...")
-            meta_raw = _groq_call(meta_prompt, max_tokens=200)
+    # ── Step 2: Generate metadata (own retry loop, shorter waits) ───────
+    print("[WRITE] Step 2: generating metadata...")
+    meta_raw = _groq_call_with_retry(meta_prompt, max_tokens=200, label="Step2-meta", base_wait=30)
 
-            meta_raw = re.sub(r'^```[a-z]*\s*', '', meta_raw, flags=re.MULTILINE)
-            meta_raw = re.sub(r'```\s*$', '', meta_raw, flags=re.MULTILINE).strip()
+    meta_raw = re.sub(r'^```[a-z]*\s*', '', meta_raw, flags=re.MULTILINE)
+    meta_raw = re.sub(r'```\s*$', '', meta_raw, flags=re.MULTILINE).strip()
 
-            # Extract first JSON object from response
-            m = re.search(r'\{.*\}', meta_raw, re.DOTALL)
-            if not m:
-                raise ValueError(f"No JSON in metadata response: {meta_raw[:100]}")
-            meta = json.loads(m.group())
+    # Extract first JSON object from response
+    m = re.search(r'\{.*\}', meta_raw, re.DOTALL)
+    if not m:
+        raise ValueError(f"No JSON in metadata response: {meta_raw[:100]}")
+    meta = json.loads(m.group())
 
-            for field in ("headline", "meta_description", "tags", "image_query"):
-                if field not in meta:
-                    raise ValueError(f"Missing metadata field: {field}")
+    for field in ("headline", "meta_description", "tags", "image_query"):
+        if field not in meta:
+            raise ValueError(f"Missing metadata field: {field}")
 
-            # Ensure tags is a list
-            if not isinstance(meta["tags"], list):
-                meta["tags"] = [str(meta["tags"])]
+    if not isinstance(meta["tags"], list):
+        meta["tags"] = [str(meta["tags"])]
 
-            return {
-                "headline": str(meta["headline"])[:120],
-                "meta_description": str(meta["meta_description"])[:160],
-                "tags": [str(t) for t in meta["tags"][:8]],
-                "image_query": str(meta["image_query"])[:80],
-                "content_html": content_html,
-            }
-
-        except RuntimeError as e:
-            if "rate_limit" in str(e):
-                print(f"[WARN] Rate limit on attempt {attempt+1}, waiting 70s...")
-                time.sleep(70)
-            else:
-                last_error = e
-                print(f"[WARN] Write error attempt {attempt+1}: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(70)
-        except Exception as e:
-            last_error = e
-            print(f"[WARN] Write error attempt {attempt+1}: {e}")
-            if attempt < max_retries - 1:
-                print("[INFO] Waiting 70s before retry...")
-                time.sleep(70)
-
-    raise RuntimeError(f"Failed after {max_retries} attempts: {last_error}")
+    return {
+        "headline": str(meta["headline"])[:120],
+        "meta_description": str(meta["meta_description"])[:160],
+        "tags": [str(t) for t in meta["tags"][:8]],
+        "image_query": str(meta["image_query"])[:80],
+        "content_html": content_html,
+    }

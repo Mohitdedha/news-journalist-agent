@@ -183,9 +183,9 @@ def run():
             traceback.print_exc()
             errors.append(err)
 
-        # Small gap between stories to avoid Groq burst limit
+        # Gap between stories to let Groq TPM window recover
         if i < len(stories) - 1:
-            time.sleep(10)
+            time.sleep(30)
 
     # 9. Batch SEO submission
     if new_post_urls:
