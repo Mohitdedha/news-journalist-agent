@@ -107,7 +107,7 @@ def run():
 
             # 4a. Guard: skip blank/too-short content
             content_len = len(re.sub(r'<[^>]+>', '', article.get("content_html", "")))
-            if content_len < 300:
+            if content_len < 500:
                 print(f"[SKIP] Content too short ({content_len} chars) — not publishing blank post")
                 skipped_count += 1
                 continue

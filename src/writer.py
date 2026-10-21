@@ -82,41 +82,65 @@ def _groq_call(prompt, max_tokens=700, temperature=0.4):
 # ── Prompt 1: plain HTML content only ──────────────────────────────────────
 
 _CONTENT_PROMPT = """\
-You are a human journalist at an independent news desk. Write a 300-word news article in HTML.
+You are a senior journalist writing for a high-authority news website. Write a 700-800 word news article in HTML that ranks on Google's first page.
 
-VOICE: Write exactly like a real reporter — direct, punchy, human. Not a bot summarising facts.
+GOOGLE E-E-A-T RULES (Experience, Expertise, Authoritativeness, Trustworthiness):
+- Use exact numbers, dates, names, places — never vague claims.
+- Attribute every claim: "according to...", "officials said", "data shows".
+- Cover WHO, WHAT, WHEN, WHERE, WHY and HOW.
+- Include background/context so readers understand the full story.
+- End with what happens next (forward-looking paragraph).
 
-BANNED PHRASES (never use these):
-- "In a significant development", "amid growing concerns", "it is worth noting",
-  "shed light on", "in the wake of", "Furthermore", "Moreover", "Additionally",
-  "It is important to", "In conclusion", "has been reported that", "it is believed that",
-  "stakeholders", "landscape", "going forward", "at this point in time", "delve into"
+VOICE: Write like a real senior reporter — direct, authoritative, human. Not a bot.
 
-STYLE RULES:
-- Mix short punchy sentences with longer ones. Vary the rhythm like a real human does.
-- Lead with the most newsworthy fact — no build-up, just hit it.
-- Drop in 1-2 quotes from officials or sources (paraphrase if needed, attribute them).
-- Use exact numbers, dates, names, places. Vague = fake.
-- Contractions are fine (it's, didn't, won't, can't).
-- Subheadings: 3-4 word punchy phrases, not full sentences.
+BANNED PHRASES (never use):
+"In a significant development", "amid growing concerns", "it is worth noting",
+"shed light on", "in the wake of", "Furthermore", "Moreover", "Additionally",
+"It is important to", "In conclusion", "has been reported that", "stakeholders",
+"landscape", "going forward", "delve into", "it is believed that"
 
-STRUCTURE:
-<p>Lead — key fact in 1-2 sentences. Straight to the point.</p>
-<p>Why it matters — 2 sentences of context.</p>
-<h2>Short Subhead</h2>
-<p>Details, quotes, reaction.</p>
-<h2>Short Subhead</h2>
-<p>What happens next or broader impact. No "In conclusion".</p>
+STYLE:
+- Mix short punchy sentences with longer analytical ones.
+- Lead with the single most important fact — no warm-up.
+- Include 2-3 quotes from officials/experts (paraphrase if needed, always attribute).
+- Contractions are fine (it's, didn't, won't).
+- H2 subheadings: 3-5 words, punchy, not full sentences.
+- H3 for sub-points within sections.
+
+STRUCTURE (follow exactly):
+<p>[Lead — single most newsworthy fact, 1-2 sentences]</p>
+<p>[Context — why this matters, 2-3 sentences with numbers/names]</p>
+
+<h2>[Background / What Led Here]</h2>
+<p>[2-3 sentences of background. Quote or attributed claim.]</p>
+
+<h2>[Key Details]</h2>
+<p>[Main facts, figures, timeline. 3-4 sentences.]</p>
+<p>[Reaction or second angle. Quote from official/expert.]</p>
+
+<h2>[Impact / What It Means]</h2>
+<p>[Who is affected and how. Specific numbers if available.]</p>
+<p>[Broader regional or global implications.]</p>
+
+<h2>[What Happens Next]</h2>
+<p>[Upcoming dates, decisions, or events to watch. 2-3 sentences.]</p>
+
+<h2>Frequently Asked Questions</h2>
+<h3>[Question directly related to the story — phrased as a user would search it]</h3>
+<p>[Clear 2-sentence answer.]</p>
+<h3>[Second question users would ask about this topic]</h3>
+<p>[Clear 2-sentence answer.]</p>
+
 <p><em>Source: {source_name}</em></p>
 
-OUTPUT: Only the HTML. No JSON. No explanation. Start with <p>.
+OUTPUT: Only the HTML. No JSON, no markdown fences, no explanation. Start with <p>.
 
 STORY:
 Title: {title}
 Source: {source_name}
 Summary: {summary}
 
-ARTICLE TEXT (facts only — do NOT copy sentences, rewrite everything in your own voice):
+ARTICLE TEXT (use as facts only — rewrite everything in your own voice, do NOT copy sentences):
 {article_text}
 """
 
@@ -174,7 +198,7 @@ def write_article(story, max_retries=3):
         try:
             # ── Step 1: Generate HTML content ──────────────────────────────
             print(f"[WRITE] Step 1: generating content (attempt {attempt+1})...")
-            content_html = _groq_call(content_prompt, max_tokens=1500)
+            content_html = _groq_call(content_prompt, max_tokens=2500)
 
             # Strip any accidental JSON/markdown wrapping
             content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)
