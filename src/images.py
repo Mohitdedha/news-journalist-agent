@@ -18,6 +18,10 @@ MAX_FILE_KB = 200
 # In-memory set for this run (also backed by history.json across runs)
 _used_photo_ids = set()
 
+# Set before process_image() call so make_thumbnail() can read them
+_current_headline = ""
+_current_category = "global"
+
 
 def init_used_photos(history):
     """Load previously used photo IDs from history into memory."""
@@ -76,7 +80,9 @@ def search_unsplash(query, per_page=20, randomize_page=False):
             # Prefer full/regular over small; skip tiny images
             if w < 800 or h < 400:
                 continue
-            url = r.get("urls", {}).get("full", "") or r.get("urls", {}).get("regular", "")
+            raw_url = r.get("urls", {}).get("regular", "") or r.get("urls", {}).get("full", "")
+            # Unsplash requires utm params for API usage compliance (free, copyright-free)
+            url = raw_url + ("&" if "?" in raw_url else "?") + "auto=format&fit=crop&w=1200&h=630&q=85&utm_source=indiabbcnews&utm_medium=referral" if raw_url else ""
             photos.append({
                 "id": r.get("id", ""),
                 "url": url,
@@ -97,74 +103,116 @@ def download_image(url, timeout=15):
         return None
 
 
-def _brand_image(img):
+_CATEGORY_COLORS = {
+    "india":       (220, 38,  38),   # red
+    "global":      (37,  99,  235),  # blue
+    "technology":  (5,   150, 105),  # green
+    "economy":     (217, 119, 6),    # amber
+    "business":    (217, 119, 6),    # amber
+    "sports":      (124, 58,  237),  # purple
+    "cricket":     (124, 58,  237),  # purple
+    "science":     (6,   182, 212),  # cyan
+    "lifestyle":   (236, 72,  153),  # pink
+    "entertainment":(236, 72,  153), # pink
+    "education":   (16,  185, 129),  # teal
+    "europe-uk":   (37,  99,  235),  # blue
+}
+_DEFAULT_CAT_COLOR = (204, 0, 0)
+
+
+def _load_font(size):
+    """Try to load a bold font at the given size."""
+    from PIL import ImageFont
+    paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    ]
+    for p in paths:
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+
+def _wrap_text(text, font, draw, max_width):
+    """Word-wrap text to fit max_width pixels. Returns list of lines."""
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        test = (current + " " + word).strip()
+        try:
+            w = draw.textbbox((0, 0), test, font=font)[2]
+        except Exception:
+            w = len(test) * (font.size if hasattr(font, 'size') else 10)
+        if w <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines[:3]  # max 3 lines
+
+
+def make_thumbnail(img, headline="", category="global"):
     """
-    Add indiabbcnews.com branding to a PIL Image (already 1200x630).
-    - Subtle dark gradient at bottom 25%
-    - Red accent bar (bottom 28px) with 'indiabbcnews.com' text
-    Returns branded PIL Image.
+    Convert a plain PIL Image into a branded news thumbnail (1200x630).
+    Layout:
+      - Full-bleed background image (slightly darkened)
+      - Heavy dark gradient over bottom 45%
+      - Category badge (top-left, colored)
+      - INDIA BBC NEWS logo (top-right)
+      - Bold white headline text (bottom area, 2-3 lines)
+      - Red bottom bar with indiabbcnews.com
     """
     try:
-        from PIL import ImageDraw, ImageFont
+        from PIL import ImageDraw, ImageEnhance, ImageFilter
 
-        W, H = img.size  # 1200 x 630
+        W, H = img.size   # 1200 x 630
 
-        # ── Gradient overlay (bottom 25%) ────────────────────────────────────
-        grad_h = int(H * 0.25)
+        # ── Enhance image: contrast + saturation + slight cool tone ─────────
+        img = ImageEnhance.Contrast(img).enhance(1.25)
+        img = ImageEnhance.Color(img).enhance(1.15)      # richer colours
+        img = ImageEnhance.Brightness(img).enhance(0.88)  # slight darkening
+
+        # ── Subtle gradient overlay: bottom 30% only (no heavy cover) ───────
+        grad_h = int(H * 0.30)
         grad_top = H - grad_h
         overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        draw_ov = ImageDraw.Draw(overlay)
+        drv = ImageDraw.Draw(overlay)
         for y in range(grad_top, H):
-            alpha = int(140 * (y - grad_top) / grad_h)
-            draw_ov.line([(0, y), (W, y)], fill=(0, 0, 0, alpha))
+            alpha = int(140 * ((y - grad_top) / grad_h) ** 1.4)
+            drv.line([(0, y), (W, y)], fill=(0, 0, 0, min(alpha, 140)))
         img = img.convert("RGBA")
         img = Image.alpha_composite(img, overlay).convert("RGB")
 
         draw = ImageDraw.Draw(img)
 
-        # ── Red accent bar at very bottom ────────────────────────────────────
-        bar_h = 30
-        draw.rectangle([(0, H - bar_h), (W, H)], fill=(204, 0, 0))
+        # ── Fonts ─────────────────────────────────────────────────────────────
+        f_url = _load_font(17)  # bottom bar URL
 
-        # ── Font: try system fonts, fall back to default ─────────────────────
-        font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Ubuntu/Actions
-            "C:/Windows/Fonts/arialbd.ttf",                           # Windows
-            "C:/Windows/Fonts/arial.ttf",
-        ]
-        font_url = None
-        for fp in font_paths:
-            try:
-                font_url = ImageFont.truetype(fp, 18)
-                break
-            except Exception:
-                pass
-        if font_url is None:
-            font_url = ImageFont.load_default()
-
-        # ── Website URL centred on red bar ───────────────────────────────────
-        text = "indiabbcnews.com"
-        # Get text width for centering
+        # ── Thin red line + black bottom bar with indiabbcnews.com ──────────
+        bar_h = 34
+        draw.rectangle([(0, H - bar_h - 3), (W, H - bar_h)], fill=(204, 0, 0))
+        draw.rectangle([(0, H - bar_h), (W, H)], fill=(15, 15, 15))
+        url_text = "indiabbcnews.com"
         try:
-            bbox = draw.textbbox((0, 0), text, font=font_url)
-            tw = bbox[2] - bbox[0]
+            ub = draw.textbbox((0, 0), url_text, font=f_url)
+            uw = ub[2] - ub[0]
         except Exception:
-            tw = len(text) * 10
-        tx = (W - tw) // 2
-        ty = H - bar_h + (bar_h - 20) // 2
-        draw.text((tx, ty), text, fill="white", font=font_url)
-
-        # ── Small logo text top-left corner ──────────────────────────────────
-        try:
-            font_logo = ImageFont.truetype(font_paths[0] if font_url != ImageFont.load_default() else "", 14)
-        except Exception:
-            font_logo = font_url
-        draw.rectangle([(0, 0), (160, 26)], fill=(0, 0, 0, 140))
-        draw.text((8, 5), "INDIA BBC NEWS", fill=(255, 50, 50), font=font_logo)
+            uw = len(url_text) * 10
+        draw.text(((W - uw) // 2, H - bar_h + 8), url_text,
+                   fill=(210, 210, 210), font=f_url)
 
         return img
+
     except Exception as e:
-        print(f"[WARN] Branding failed: {e}")
+        print(f"[WARN] Thumbnail creation failed: {e}")
         return img
 
 
@@ -187,19 +235,13 @@ def process_image(image_bytes):
 
         img = img.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
 
-        # ── Custom editing: contrast + sharpness + slight cool tone ──────────
-        from PIL import ImageEnhance, ImageFilter
-        img = ImageEnhance.Contrast(img).enhance(1.15)      # +15% contrast
-        img = ImageEnhance.Sharpness(img).enhance(1.4)      # sharpen
-        img = ImageEnhance.Color(img).enhance(1.1)          # slightly more vivid
-        # Subtle cool/blue tint (news feel) via channel tweak
-        r, g, b = img.split()
-        b = b.point(lambda px: min(255, int(px * 1.06)))    # boost blue slightly
-        r = r.point(lambda px: int(px * 0.97))              # reduce red slightly
-        img = Image.merge("RGB", (r, g, b))
+        # ── Sharpen before thumbnail ──────────────────────────────────────────
+        from PIL import ImageEnhance
+        img = ImageEnhance.Sharpness(img).enhance(1.3)
 
-        # Add indiabbcnews.com branding to every image
-        img = _brand_image(img)
+        # make_thumbnail() handles all branding + headline overlay
+        # headline/category injected via find_and_process_image
+        img = make_thumbnail(img, headline=_current_headline, category=_current_category)
 
         buf = io.BytesIO()
         quality = 85
@@ -278,12 +320,16 @@ def _build_fallback_queries(image_query, headline):
     return unique
 
 
-def find_and_process_image(image_query, headline, context, history=None):
+def find_and_process_image(image_query, headline, context, history=None, category="global"):
     """
     Search → download → process → upload path.
     Tracks used photo IDs in memory + history.json to prevent repeats across runs.
     Returns (bytes, alt_text, caption) or (None, None, None).
     """
+    global _current_headline, _current_category
+    _current_headline = headline
+    _current_category = category
+
     fallback_queries = _build_fallback_queries(image_query, headline)
     generic_fallbacks = set(_GENERIC_FALLBACKS)
 

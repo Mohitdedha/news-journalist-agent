@@ -107,7 +107,7 @@ def run():
 
             # 4a. Guard: skip blank/too-short content
             content_len = len(re.sub(r'<[^>]+>', '', article.get("content_html", "")))
-            if content_len < 150:
+            if content_len < 300:
                 print(f"[SKIP] Content too short ({content_len} chars) — not publishing blank post")
                 skipped_count += 1
                 continue
@@ -124,20 +124,27 @@ def run():
                 image_query=article.get("image_query", story["title"]),
                 headline=article["headline"],
                 context=article.get("meta_description", ""),
-                history=history
+                history=history,
+                category=story.get("category", "global"),
             )
 
-            featured_media_id = None
-            featured_media_url = None
-            if img_bytes:
-                slug = story["title"].lower()[:40].replace(" ", "-")
-                slug = "".join(c for c in slug if c.isalnum() or c == "-")
-                filename = f"{slug}.jpg"
-                featured_media_id, featured_media_url = upload_to_wordpress(
-                    img_bytes, filename, alt_text or article["headline"], caption or ""
-                )
-                if featured_media_id:
-                    print(f"[OK] Image uploaded: media_id={featured_media_id}")
+            # Guard: no fresh unique image → skip rather than post with bad/repeated image
+            if not img_bytes:
+                print(f"[SKIP] No fresh unique image found — skipping story to avoid blank/repeat image")
+                skipped_count += 1
+                continue
+
+            slug = story["title"].lower()[:40].replace(" ", "-")
+            slug = "".join(c for c in slug if c.isalnum() or c == "-")
+            filename = f"{slug}.jpg"
+            featured_media_id, featured_media_url = upload_to_wordpress(
+                img_bytes, filename, alt_text or article["headline"], caption or ""
+            )
+            if not featured_media_id:
+                print(f"[SKIP] Image upload failed — skipping story")
+                skipped_count += 1
+                continue
+            print(f"[OK] Image uploaded: media_id={featured_media_id}")
 
             # 6. Publish to WordPress
             print(f"[PUBLISH] Creating post as '{PUBLISH_STATUS}'...")
