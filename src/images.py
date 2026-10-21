@@ -187,6 +187,17 @@ def process_image(image_bytes):
 
         img = img.resize((TARGET_WIDTH, TARGET_HEIGHT), Image.LANCZOS)
 
+        # ── Custom editing: contrast + sharpness + slight cool tone ──────────
+        from PIL import ImageEnhance, ImageFilter
+        img = ImageEnhance.Contrast(img).enhance(1.15)      # +15% contrast
+        img = ImageEnhance.Sharpness(img).enhance(1.4)      # sharpen
+        img = ImageEnhance.Color(img).enhance(1.1)          # slightly more vivid
+        # Subtle cool/blue tint (news feel) via channel tweak
+        r, g, b = img.split()
+        b = b.point(lambda px: min(255, int(px * 1.06)))    # boost blue slightly
+        r = r.point(lambda px: int(px * 0.97))              # reduce red slightly
+        img = Image.merge("RGB", (r, g, b))
+
         # Add indiabbcnews.com branding to every image
         img = _brand_image(img)
 
