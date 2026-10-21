@@ -207,6 +207,10 @@ def write_article(story, max_retries=3):
             # Validate content
             if not content_html or len(content_html) < 200:
                 raise ValueError(f"Content too short: {len(content_html)} chars")
+            # Catch "undefined"/"null" whether bare or wrapped in HTML tags
+            text_only = re.sub(r'<[^>]+>', '', content_html).strip().lower()
+            if text_only in ("undefined", "null", "none", "") or len(text_only) < 150:
+                raise ValueError(f"Content is placeholder/empty: '{text_only[:60]}'")
             if content_html.lower().strip() in ("undefined", "null", "none"):
                 raise ValueError(f"Content is placeholder: {content_html[:50]}")
             if not content_html.startswith("<"):
