@@ -144,6 +144,27 @@ def _inject_internal_links(content, headline, recent_posts, max_links=2):
     return result
 
 
+_BAD_CONTENT_PATTERNS = re.compile(
+    r'^\s*(undefined|null|none|nan|error|<p>\s*undefined\s*</p>|<p>\s*null\s*</p>)\s*$',
+    re.IGNORECASE
+)
+
+def _validate_content(headline, content):
+    """Last-resort content guard before publishing to WordPress. Raises on bad content."""
+    if not content or not content.strip():
+        raise ValueError("Content is empty")
+    text_only = re.sub(r'<[^>]+>', '', content).strip()
+    if len(text_only) < 400:
+        raise ValueError(f"Content too short after stripping HTML: {len(text_only)} chars")
+    # Check for AI failure tokens anywhere in the text
+    lower = text_only.lower()
+    for bad in ("undefined", "null\n", "[object object]", "lorem ipsum", "insert content here"):
+        if lower.strip() == bad or lower.startswith(bad + "\n"):
+            raise ValueError(f"Content is placeholder: starts with '{bad}'")
+    if not headline or len(headline.strip()) < 5:
+        raise ValueError(f"Headline too short: '{headline}'")
+
+
 def create_post(article, wp_category_id, featured_media_id=None, publish_status="draft"):
     """
     Create a WordPress post. Returns (post_id, post_url).
@@ -153,6 +174,9 @@ def create_post(article, wp_category_id, featured_media_id=None, publish_status=
     content = article["content_html"]
     meta_desc = article["meta_description"]
     tags_list = article.get("tags", [])
+
+    # Hard guard — never publish garbage regardless of what writer returned
+    _validate_content(headline, content)
 
     # Internal linking — fetch recent posts and inject 2 links
     recent_posts = _fetch_recent_posts(limit=20)
