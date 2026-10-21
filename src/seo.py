@@ -93,6 +93,37 @@ def ping_rpc_services(post_title, post_url):
     print(f"[SEO] RPC pings sent: {ok}/{len(endpoints)} services responded")
 
 
+def submit_to_aggregators(post_url, post_title):
+    """
+    Submit new article URL to free content aggregators & RSS readers.
+    These index content fast and send referral traffic.
+    """
+    rss_url = f"{WP_URL}/feed/"
+    endpoints = [
+        # Flipboard RSS ping
+        f"https://flipboard.com/api/rss/subscribe?rss_url={rss_url}",
+        # Feedly cloud ping
+        f"https://cloud.feedly.com/v3/feeds/feed%2F{rss_url}",
+        # Superfeedr hub notify
+        "https://pubsubhubbub.superfeedr.com/",
+    ]
+    ok = 0
+    for ep in endpoints:
+        try:
+            if "superfeedr" in ep:
+                r = requests.post(ep, data={
+                    "hub.mode": "publish",
+                    "hub.url": rss_url,
+                }, timeout=8)
+            else:
+                r = requests.get(ep, timeout=8)
+            if r.status_code in (200, 202, 204):
+                ok += 1
+        except Exception:
+            pass
+    print(f"[SEO] Aggregator submissions: {ok}/{len(endpoints)} accepted")
+
+
 def generate_indexnow_key_file(key):
     """
     Print the content to upload as /{key}.txt to verify ownership.
