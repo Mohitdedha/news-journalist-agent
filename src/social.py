@@ -32,7 +32,7 @@ TWITTER_ACCESS_SECRET= os.environ.get("TWITTER_ACCESS_SECRET", "")
 TELEGRAM_BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID  = os.environ.get("TELEGRAM_CHANNEL_ID", "")
 
-GRAPH_API = "https://graph.facebook.com/v19.0"
+GRAPH_API = "https://graph.facebook.com/v21.0"
 
 REDDIT_CLIENT_ID     = os.environ.get("REDDIT_CLIENT_ID", "")
 REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
