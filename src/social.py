@@ -123,7 +123,13 @@ def post_facebook(headline, meta_description, post_url, image_url, tags):
         print(f"[SOCIAL] Facebook posted: {post_id}")
         return True
     except Exception as e:
-        print(f"[WARN] Facebook post failed: {e}")
+        body = ""
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text[:300]
+        print(f"[WARN] Facebook post failed: {e} | detail: {body}")
         return False
 
 
