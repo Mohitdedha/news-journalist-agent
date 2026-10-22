@@ -61,7 +61,7 @@ def _get_available_model():
     return _GROQ_MODELS[0]
 
 
-def _groq_call(prompt, max_tokens=700, temperature=0.4):
+def _groq_call(prompt, max_tokens=700, temperature=0.75):
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY not set in GitHub Secrets")
     model = _get_available_model()
@@ -119,65 +119,47 @@ def _ai_call(prompt, max_tokens=700, label=""):
 # ── Prompt 1: plain HTML content only ──────────────────────────────────────
 
 _CONTENT_PROMPT = """\
-You are a senior journalist writing for a high-authority news website. Write a 700-800 word news article in HTML that ranks on Google's first page.
+You are a senior correspondent at a high-authority international news outlet. Your writing is unmistakably human — you vary rhythm, mix short punches with longer analysis, and never write the same way twice.
 
-GOOGLE E-E-A-T RULES (Experience, Expertise, Authoritativeness, Trustworthiness):
-- Use exact numbers, dates, names, places — never vague claims.
-- Attribute every claim: "according to...", "officials said", "data shows".
-- Cover WHO, WHAT, WHEN, WHERE, WHY and HOW.
-- Include background/context so readers understand the full story.
-- End with what happens next (forward-looking paragraph).
+Write a 750-900 word news article in HTML. It must pass AI-content detectors and rank on Google page 1.
 
-VOICE: Write like a real senior reporter — direct, authoritative, human. Not a bot.
+GOOGLE E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness):
+- Open with the single most newsworthy fact — no warm-up, no throat-clearing.
+- Every figure must be exact: dates, amounts, names, official titles.
+- Attribute every claim: "the ministry confirmed", "UN data shows", "officials told reporters".
+- Include one forward-looking paragraph: what decision, vote, or deadline comes next.
 
-BANNED PHRASES (never use):
-"In a significant development", "amid growing concerns", "it is worth noting",
-"shed light on", "in the wake of", "Furthermore", "Moreover", "Additionally",
-"It is important to", "In conclusion", "has been reported that", "stakeholders",
-"landscape", "going forward", "delve into", "it is believed that"
+HUMAN WRITING RULES — critical:
+- Vary paragraph openings: start some with a number, some with a name, some with a short question, some with a quote, some with a subordinate clause. Never start two consecutive paragraphs the same way.
+- Mix sentence lengths aggressively: some 6-word punches, some 30-word analytical sentences with sub-clauses.
+- Use contractions freely: it's, didn't, won't, they've, there's, can't.
+- Include one specific, unexpected detail that proves you reported this — not summarized it.
+- Choose H2 headings that fit THIS story's angle. Do NOT use generic labels like "What Led Here", "Key Details", "What Happens Next" every time.
 
-STYLE:
-- Mix short punchy sentences with longer analytical ones.
-- Lead with the single most important fact — no warm-up.
-- Include 2-3 quotes from officials/experts (paraphrase if needed, always attribute).
-- Contractions are fine (it's, didn't, won't).
-- H2 subheadings: 3-5 words, punchy, not full sentences.
-- H3 for sub-points within sections.
+BANNED PHRASES — never use, not even once:
+"In a significant development", "amid growing concerns", "shed light on", "in the wake of",
+"Furthermore", "Moreover", "Additionally", "It is worth noting", "It is important to",
+"In conclusion", "has been reported that", "stakeholders", "landscape", "going forward",
+"delve into", "it is believed that", "a recent study", "comprehensive", "robust",
+"seamlessly", "leverage", "pivotal", "multifaceted", "underscores", "at the end of the day",
+"needless to say", "make no mistake", "the fact of the matter", "crucial", "imperative"
 
-STRUCTURE (follow exactly):
-<p>[Lead — single most newsworthy fact, 1-2 sentences]</p>
-<p>[Context — why this matters, 2-3 sentences with numbers/names]</p>
+STRUCTURE:
+- Lead paragraph (1-2 sentences — most newsworthy fact)
+- Context paragraph (why it matters — numbers, names)
+- 3-5 H2 sections with story-specific headings
+- 2-3 attributed quotes or paraphrased statements throughout
+- One H2 "Frequently Asked Questions" with 2 H3 questions users would actually Google
+- Final line: <p><em>Source: {source_name}</em></p>
 
-<h2>[Background / What Led Here]</h2>
-<p>[2-3 sentences of background. Quote or attributed claim.]</p>
-
-<h2>[Key Details]</h2>
-<p>[Main facts, figures, timeline. 3-4 sentences.]</p>
-<p>[Reaction or second angle. Quote from official/expert.]</p>
-
-<h2>[Impact / What It Means]</h2>
-<p>[Who is affected and how. Specific numbers if available.]</p>
-<p>[Broader regional or global implications.]</p>
-
-<h2>[What Happens Next]</h2>
-<p>[Upcoming dates, decisions, or events to watch. 2-3 sentences.]</p>
-
-<h2>Frequently Asked Questions</h2>
-<h3>[Question directly related to the story — phrased as a user would search it]</h3>
-<p>[Clear 2-sentence answer.]</p>
-<h3>[Second question users would ask about this topic]</h3>
-<p>[Clear 2-sentence answer.]</p>
-
-<p><em>Source: {source_name}</em></p>
-
-OUTPUT: Only the HTML. No JSON, no markdown fences, no explanation. Start with <p>.
+OUTPUT: Only raw HTML. No JSON, no markdown fences, no explanation. Start directly with <p>.
 
 STORY:
 Title: {title}
 Source: {source_name}
 Summary: {summary}
 
-ARTICLE TEXT (use as facts only — rewrite everything in your own voice, do NOT copy sentences):
+ARTICLE TEXT (facts only — rewrite entirely in your own voice, copy nothing):
 {article_text}
 """
 

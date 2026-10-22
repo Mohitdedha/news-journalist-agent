@@ -172,7 +172,14 @@ def run():
             # 8. Social media posting + RPC backlink pings
             if PUBLISH_STATUS == "publish" and post_url:
                 print("[SOCIAL] Posting to social media...")
-                post_to_all(article, post_url, image_url=featured_media_url)
+                # Every 4th published article gets a video post (Reel/FB video)
+                # Also video for breaking/trending stories
+                _tags_lower = {t.lower() for t in article.get("tags", [])}
+                _is_trending = bool(_tags_lower & {"breaking", "viral", "exclusive", "urgent", "crisis"})
+                _post_video = (published_count % 4 == 0) or _is_trending
+                if _post_video:
+                    print("[SOCIAL] Video post selected for this article")
+                post_to_all(article, post_url, image_url=featured_media_url, post_video=_post_video)
                 ping_rpc_services(article["headline"], post_url)
                 submit_to_aggregators(post_url, article["headline"])
                 submit_to_google_indexing(post_url)

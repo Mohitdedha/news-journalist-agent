@@ -470,9 +470,124 @@ def post_reddit(headline, meta_description, post_url, tags):
         return False
 
 
+# ── Video creation (Ken Burns zoom via ffmpeg) ───────────────────────────────
+
+def _make_article_video(image_bytes, headline, duration=12):
+    """
+    Create a 12-second MP4 with Ken Burns zoom effect from the article image.
+    Uses ffmpeg zoompan filter (available on ubuntu-latest GitHub Actions).
+    Returns (video_bytes, tmp_video_path) or (None, None) on failure.
+    """
+    try:
+        import subprocess, tempfile, os as _os
+
+        branded = _make_instagram_image(image_bytes, headline)
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            f.write(branded)
+            img_path = f.name
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            out_path = f.name
+
+        fps = 24
+        total_frames = duration * fps  # 288 frames
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", img_path,
+            "-vf", (
+                f"zoompan=z='min(zoom+0.0010,1.3)':d={total_frames}:s=1080x1080,"
+                f"fps={fps}"
+            ),
+            "-t", str(duration),
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            out_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=90)
+        _os.unlink(img_path)
+
+        if result.returncode != 0:
+            print(f"[WARN] ffmpeg failed: {result.stderr.decode()[:300]}")
+            return None, None
+
+        with open(out_path, "rb") as vf:
+            video_bytes = vf.read()
+
+        print(f"[SOCIAL] Video created: {len(video_bytes)//1024}KB, {duration}s")
+        return video_bytes, out_path
+    except Exception as e:
+        print(f"[WARN] Video creation failed: {e}")
+        return None, None
+
+
+# ── Facebook video upload ─────────────────────────────────────────────────────
+
+def post_facebook_video(headline, meta_description, post_url, video_bytes, tags):
+    if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN:
+        print("[SOCIAL] Facebook video: credentials not set — skipping")
+        return False
+    try:
+        caption = _make_caption(headline, meta_description, post_url, tags, "facebook")
+        resp = requests.post(
+            f"{GRAPH_API}/{FB_PAGE_ID}/videos",
+            data={
+                "description": caption,
+                "access_token": FB_PAGE_ACCESS_TOKEN,
+            },
+            files={"source": ("news_video.mp4", video_bytes, "video/mp4")},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        vid_id = resp.json().get("id", "?")
+        print(f"[SOCIAL] Facebook video posted: {vid_id}")
+        return True
+    except Exception as e:
+        print(f"[WARN] Facebook video post failed: {e}")
+        return False
+
+
+# ── Instagram Reel upload (via instagrapi) ────────────────────────────────────
+
+def post_instagram_reel(headline, meta_description, post_url, video_path, tags):
+    if not IG_USERNAME or (not IG_PASSWORD and not IG_SESSION):
+        print("[SOCIAL] Instagram reel: credentials not set — skipping")
+        return False
+    if not video_path:
+        return False
+    try:
+        from instagrapi import Client
+        import json as _json
+
+        caption = _make_caption(headline, meta_description, post_url, tags, "instagram")
+        cl = Client()
+        if IG_SESSION:
+            cl.set_settings(_json.loads(IG_SESSION))
+            cl.login(IG_USERNAME, IG_PASSWORD)
+        else:
+            cl.set_settings({
+                "app_version": "269.0.0.18.75",
+                "android_release": "11",
+                "android_version": 30,
+            })
+            cl.login(IG_USERNAME, IG_PASSWORD)
+        media = cl.clip_upload(video_path, caption=caption)
+        print(f"[SOCIAL] Instagram Reel posted: {media.pk}")
+        return True
+    except ImportError:
+        print("[WARN] Instagram reel: instagrapi not installed")
+        return False
+    except Exception as e:
+        print(f"[WARN] Instagram reel failed: {e}")
+        return False
+
+
 # ── Main entry point ─────────────────────────────────────────────────────────
 
-def post_to_all(article, post_url, image_url=None):
+def post_to_all(article, post_url, image_url=None, post_video=False):
     """
     Post article to all configured social platforms.
     Called after WordPress publish. Skips any platform missing credentials.
@@ -482,9 +597,44 @@ def post_to_all(article, post_url, image_url=None):
     content_html = article.get("content_html", f"<p>{meta_desc}</p>")
     tags         = article.get("tags", [])
 
+    # Optionally create video (Ken Burns slideshow) for this post
+    video_bytes = None
+    video_path = None
+    if post_video and image_url:
+        print("[SOCIAL] Creating article video for this post...")
+        try:
+            img_resp = requests.get(image_url, timeout=15)
+            img_resp.raise_for_status()
+            video_bytes, video_path = _make_article_video(img_resp.content, headline)
+        except Exception as e:
+            print(f"[WARN] Video prep failed: {e}")
+
     results = {}
-    results["facebook"]  = post_facebook(headline, meta_desc, post_url, image_url, tags)
-    results["instagram"] = post_instagram(headline, meta_desc, post_url, image_url, tags)
+    # Facebook: video post if video available, else photo post
+    if post_video and video_bytes:
+        results["facebook"] = post_facebook_video(headline, meta_desc, post_url, video_bytes, tags)
+        if not results["facebook"]:
+            results["facebook"] = post_facebook(headline, meta_desc, post_url, image_url, tags)
+    else:
+        results["facebook"] = post_facebook(headline, meta_desc, post_url, image_url, tags)
+
+    # Instagram: Reel if video available, else photo post
+    if post_video and video_path:
+        results["instagram"] = post_instagram_reel(headline, meta_desc, post_url, video_path, tags)
+        if not results["instagram"]:
+            results["instagram"] = post_instagram(headline, meta_desc, post_url, image_url, tags)
+    else:
+        results["instagram"] = post_instagram(headline, meta_desc, post_url, image_url, tags)
+
+    # Cleanup video temp file
+    if video_path:
+        try:
+            import os as _os
+            if _os.path.exists(video_path):
+                _os.unlink(video_path)
+        except Exception:
+            pass
+
     results["twitter"]   = post_twitter(headline, meta_desc, post_url, image_url, tags)
     results["telegram"]  = post_telegram(headline, meta_desc, post_url, image_url, tags)
     results["reddit"]    = post_reddit(headline, meta_desc, post_url, tags)
