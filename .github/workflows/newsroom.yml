@@ -2,14 +2,26 @@ name: News Journalist Agent
 
 on:
   schedule:
-    # UK morning peak (7am GMT / 12:30pm IST)
+    # Every hour from 5am to 11pm UTC (10:30am to 4:30am IST)
+    - cron: '0 5 * * *'
+    - cron: '0 6 * * *'
     - cron: '0 7 * * *'
-    # US East morning + UK lunch (12pm UTC / 5:30pm IST)
+    - cron: '0 8 * * *'
+    - cron: '0 9 * * *'
+    - cron: '0 10 * * *'
+    - cron: '0 11 * * *'
     - cron: '0 12 * * *'
-    # US afternoon (3pm UTC / 8:30pm IST)
+    - cron: '0 13 * * *'
+    - cron: '0 14 * * *'
     - cron: '0 15 * * *'
-    # US prime time / evening (8pm UTC / 1:30am IST+1)
+    - cron: '0 16 * * *'
+    - cron: '0 17 * * *'
+    - cron: '0 18 * * *'
+    - cron: '0 19 * * *'
     - cron: '0 20 * * *'
+    - cron: '0 21 * * *'
+    - cron: '0 22 * * *'
+    - cron: '0 23 * * *'
   workflow_dispatch:
     inputs:
       publish_status:
