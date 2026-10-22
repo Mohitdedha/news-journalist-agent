@@ -1,18 +1,21 @@
 """
 Social media auto-posting for IndiaBBCNews.
-Posts to Facebook Page, Instagram (via instagrapi), Twitter/X, and Telegram.
+Posts to Facebook Page, Instagram (official Graph API), Twitter/X, and Telegram.
 
 Secrets needed in GitHub (all optional — skipped if not set):
-  FB_PAGE_ID               — Facebook Page numeric ID
-  FB_PAGE_ACCESS_TOKEN     — Long-lived Page Access Token
-  IG_USERNAME              — Instagram username (e.g. indiabbcnews2026)
-  IG_PASSWORD              — Instagram password
+  FB_PAGE_ID               — Facebook Page numeric ID  (1475426142310736)
+  FB_PAGE_ACCESS_TOKEN     — Long-lived Page Access Token (renew every 60 days)
+  IG_USER_ID               — Instagram Business Account ID (get via /me/accounts after linking)
   TWITTER_API_KEY          — Twitter API Key
   TWITTER_API_SECRET       — Twitter API Secret
   TWITTER_ACCESS_TOKEN     — Twitter Access Token
   TWITTER_ACCESS_SECRET    — Twitter Access Token Secret
   TELEGRAM_BOT_TOKEN       — Telegram Bot Token (from @BotFather)
   TELEGRAM_CHANNEL_ID      — Telegram Channel username e.g. @indiabbcnews or -100xxx
+
+NOTE: Instagram uses the official Meta Graph API (NOT instagrapi).
+  This requires Instagram Business account linked to the Facebook Page in Meta Business Suite.
+  No username/password needed — uses FB_PAGE_ACCESS_TOKEN + IG_USER_ID.
 """
 import os
 import time
@@ -21,9 +24,7 @@ import requests
 # ── Credentials (from environment / GitHub Secrets) ─────────────────────────
 FB_PAGE_ID           = os.environ.get("FB_PAGE_ID", "")
 FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
-IG_USERNAME          = os.environ.get("IG_USERNAME", "")
-IG_PASSWORD          = os.environ.get("IG_PASSWORD", "")
-IG_SESSION           = os.environ.get("IG_SESSION", "")
+IG_USER_ID           = os.environ.get("IG_USER_ID", "")  # Instagram Business Account ID
 TWITTER_API_KEY      = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_API_SECRET   = os.environ.get("TWITTER_API_SECRET", "")
 TWITTER_ACCESS_TOKEN = os.environ.get("TWITTER_ACCESS_TOKEN", "")
@@ -213,58 +214,55 @@ def _make_instagram_image(image_bytes, headline):
         return image_bytes
 
 
-# ── Instagram (via instagrapi — no Facebook token needed) ────────────────────
+# ── Instagram (official Meta Graph API — safe, no ban risk) ──────────────────
 
 def post_instagram(headline, meta_description, post_url, image_url, tags):
-    if not IG_USERNAME or (not IG_PASSWORD and not IG_SESSION):
-        print("[SOCIAL] Instagram: credentials not set — skipping")
+    """
+    Post photo to Instagram using the official Meta Graph API.
+    Requires: IG_USER_ID (Instagram Business Account ID) + FB_PAGE_ACCESS_TOKEN.
+    The Instagram account must be linked to the Facebook Page in Meta Business Suite.
+    Image must be a publicly accessible URL (WordPress media URL works perfectly).
+    """
+    if not IG_USER_ID or not FB_PAGE_ACCESS_TOKEN:
+        print("[SOCIAL] Instagram: IG_USER_ID or FB_PAGE_ACCESS_TOKEN not set — skipping")
         return False
     if not image_url:
         print("[SOCIAL] Instagram: no image URL — skipping (image required)")
         return False
     try:
-        from instagrapi import Client
-        import io
-        import tempfile
-
         caption = _make_caption(headline, meta_description, post_url, tags, "instagram")
 
-        # Download the image
-        img_resp = requests.get(image_url, timeout=15)
-        img_resp.raise_for_status()
+        # Step 1: Create media container
+        resp = requests.post(
+            f"{GRAPH_API}/{IG_USER_ID}/media",
+            data={
+                "image_url": image_url,
+                "caption": caption,
+                "access_token": FB_PAGE_ACCESS_TOKEN,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        creation_id = resp.json().get("id")
+        if not creation_id:
+            print(f"[WARN] Instagram: no creation_id — {resp.json()}")
+            return False
 
-        # Brand the image for Instagram (square + overlay + URL)
-        branded = _make_instagram_image(img_resp.content, headline)
-
-        # Save to temp file (instagrapi needs a file path)
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp.write(branded)
-            tmp_path = tmp.name
-
-        # Login using saved session (preferred) or username/password
-        cl = Client()
-        if IG_SESSION:
-            import json as _json
-            cl.set_settings(_json.loads(IG_SESSION))
-            cl.login(IG_USERNAME, IG_PASSWORD)
-        else:
-            cl.set_settings({
-                "app_version": "269.0.0.18.75",
-                "android_release": "11",
-                "android_version": 30,
-            })
-            cl.login(IG_USERNAME, IG_PASSWORD)
-        media = cl.photo_upload(tmp_path, caption=caption)
-        print(f"[SOCIAL] Instagram posted: {media.pk}")
-
-        # Cleanup
-        import os as _os
-        _os.unlink(tmp_path)
+        # Step 2: Wait for container to be ready, then publish
+        time.sleep(8)
+        resp2 = requests.post(
+            f"{GRAPH_API}/{IG_USER_ID}/media_publish",
+            data={
+                "creation_id": creation_id,
+                "access_token": FB_PAGE_ACCESS_TOKEN,
+            },
+            timeout=30,
+        )
+        resp2.raise_for_status()
+        media_id = resp2.json().get("id", "?")
+        print(f"[SOCIAL] Instagram (Graph API) posted: {media_id}")
         return True
 
-    except ImportError:
-        print("[WARN] Instagram: instagrapi not installed — skipping")
-        return False
     except Exception as e:
         print(f"[WARN] Instagram post failed: {e}")
         return False
@@ -550,36 +548,95 @@ def post_facebook_video(headline, meta_description, post_url, video_bytes, tags)
         return False
 
 
-# ── Instagram Reel upload (via instagrapi) ────────────────────────────────────
+# ── Instagram Reel upload (official Graph API — needs public video URL) ───────
+
+def _upload_video_to_wp(video_bytes, filename="news_reel.mp4"):
+    """Upload MP4 to WordPress media library, return public URL or None."""
+    from config import WP_URL, WP_USER, WP_APP_PASSWORD
+    try:
+        resp = requests.post(
+            f"{WP_URL}/wp-json/wp/v2/media",
+            auth=(WP_USER, WP_APP_PASSWORD),
+            headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                     "Content-Type": "video/mp4"},
+            data=video_bytes,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        url = resp.json().get("source_url", "")
+        print(f"[SOCIAL] Video uploaded to WP: {url}")
+        return url
+    except Exception as e:
+        print(f"[WARN] WP video upload failed: {e}")
+        return None
+
 
 def post_instagram_reel(headline, meta_description, post_url, video_path, tags):
-    if not IG_USERNAME or (not IG_PASSWORD and not IG_SESSION):
-        print("[SOCIAL] Instagram reel: credentials not set — skipping")
+    """
+    Post Instagram Reel via official Graph API.
+    Uploads video to WordPress first to get a public URL, then uses Graph API.
+    """
+    if not IG_USER_ID or not FB_PAGE_ACCESS_TOKEN:
+        print("[SOCIAL] Instagram reel: IG_USER_ID not set — skipping")
         return False
     if not video_path:
         return False
     try:
-        from instagrapi import Client
-        import json as _json
+        import os as _os
+
+        # Upload video to WordPress to get a public URL
+        with open(video_path, "rb") as vf:
+            video_bytes = vf.read()
+        video_url = _upload_video_to_wp(video_bytes)
+        if not video_url:
+            print("[WARN] Instagram reel: could not get public video URL")
+            return False
 
         caption = _make_caption(headline, meta_description, post_url, tags, "instagram")
-        cl = Client()
-        if IG_SESSION:
-            cl.set_settings(_json.loads(IG_SESSION))
-            cl.login(IG_USERNAME, IG_PASSWORD)
-        else:
-            cl.set_settings({
-                "app_version": "269.0.0.18.75",
-                "android_release": "11",
-                "android_version": 30,
-            })
-            cl.login(IG_USERNAME, IG_PASSWORD)
-        media = cl.clip_upload(video_path, caption=caption)
-        print(f"[SOCIAL] Instagram Reel posted: {media.pk}")
+
+        # Step 1: Create Reel container
+        resp = requests.post(
+            f"{GRAPH_API}/{IG_USER_ID}/media",
+            data={
+                "media_type": "REELS",
+                "video_url": video_url,
+                "caption": caption,
+                "share_to_feed": "true",
+                "access_token": FB_PAGE_ACCESS_TOKEN,
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        creation_id = resp.json().get("id")
+        if not creation_id:
+            print(f"[WARN] Instagram reel: no creation_id — {resp.json()}")
+            return False
+
+        # Step 2: Poll until video is ready (max 60s), then publish
+        for _ in range(12):
+            time.sleep(10)
+            status_resp = requests.get(
+                f"{GRAPH_API}/{creation_id}",
+                params={"fields": "status_code", "access_token": FB_PAGE_ACCESS_TOKEN},
+                timeout=15,
+            )
+            status = status_resp.json().get("status_code", "")
+            if status == "FINISHED":
+                break
+            if status == "ERROR":
+                print("[WARN] Instagram reel processing failed")
+                return False
+
+        resp2 = requests.post(
+            f"{GRAPH_API}/{IG_USER_ID}/media_publish",
+            data={"creation_id": creation_id, "access_token": FB_PAGE_ACCESS_TOKEN},
+            timeout=30,
+        )
+        resp2.raise_for_status()
+        media_id = resp2.json().get("id", "?")
+        print(f"[SOCIAL] Instagram Reel (Graph API) posted: {media_id}")
         return True
-    except ImportError:
-        print("[WARN] Instagram reel: instagrapi not installed")
-        return False
+
     except Exception as e:
         print(f"[WARN] Instagram reel failed: {e}")
         return False
