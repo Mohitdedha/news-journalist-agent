@@ -1,0 +1,46 @@
+name: Update Instagram Profile
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Instagram bio and website
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: |
+          python3 - <<'EOF'
+          import os, requests, json
+
+          token = os.environ["FB_PAGE_ACCESS_TOKEN"]
+          ig_id = os.environ["IG_USER_ID"]
+          api = "https://graph.facebook.com/v21.0"
+
+          # Get current profile
+          r = requests.get(f"{api}/{ig_id}", params={
+              "fields": "id,name,username,biography,website,followers_count,follows_count,media_count",
+              "access_token": token
+          })
+          print("Current profile:", json.dumps(r.json(), indent=2))
+
+          # Update bio and website
+          bio = "🇮🇳 भारत की ताज़ा खबरें | Breaking News, Politics, Sports & Entertainment | India's Trusted News Source | Powered by AI | 24/7 Updates"
+          website = "https://indiabbcnews.com"
+
+          resp = requests.post(f"{api}/{ig_id}", data={
+              "biography": bio,
+              "website": website,
+              "access_token": token
+          })
+          print("Update response:", resp.status_code, resp.text)
+
+          # Verify
+          r2 = requests.get(f"{api}/{ig_id}", params={
+              "fields": "id,username,biography,website",
+              "access_token": token
+          })
+          print("Updated profile:", json.dumps(r2.json(), indent=2))
+          EOF
