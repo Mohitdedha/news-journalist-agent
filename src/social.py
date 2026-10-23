@@ -277,7 +277,13 @@ def post_instagram(headline, meta_description, post_url, image_url, tags):
         return True
 
     except Exception as e:
-        print(f"[WARN] Instagram post failed: {e}")
+        body = ""
+        if hasattr(e, "response") and e.response is not None:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text[:300]
+        print(f"[WARN] Instagram post failed: {e} | detail: {body}")
         return False
 
 
