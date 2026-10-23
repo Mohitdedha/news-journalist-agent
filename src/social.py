@@ -480,54 +480,132 @@ def post_reddit(headline, meta_description, post_url, tags):
         return False
 
 
-# ── Video creation (Ken Burns zoom via ffmpeg) ───────────────────────────────
+# ── Video creation (proper news-style broadcast video) ───────────────────────
 
-def _make_article_video(image_bytes, headline, duration=12):
+def _make_article_video(image_bytes, headline, duration=30):
     """
-    Create a 12-second MP4 with Ken Burns zoom effect from the article image.
-    Uses ffmpeg zoompan filter (available on ubuntu-latest GitHub Actions).
+    Create a 30-second broadcast news-style MP4:
+      Seg 1 (4s)  — Red "BREAKING NEWS" intro banner
+      Seg 2 (21s) — Article image with Ken Burns zoom + headline bar at bottom
+      Seg 3 (5s)  — Dark outro with website URL
     Returns (video_bytes, tmp_video_path) or (None, None) on failure.
     """
     try:
-        import subprocess, tempfile, os as _os
+        import subprocess, tempfile, os as _os, textwrap
 
-        branded = _make_instagram_image(image_bytes, headline)
+        W, H, FPS = 1080, 1080, 25
 
+        # Font paths (Ubuntu / GitHub Actions)
+        font_bold  = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+        font_reg   = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+        if not _os.path.exists(font_bold):
+            font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            font_reg  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+        # Save original image
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(branded)
+            f.write(image_bytes)
             img_path = f.name
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             out_path = f.name
 
-        fps = 24
-        total_frames = duration * fps  # 288 frames
+        # Wrap headline to ~40 chars per line, max 2 lines
+        safe_hl = headline.replace("'", "\\'").replace(":", "\\:").replace("%", "\\%")[:120]
+        lines = textwrap.wrap(safe_hl, width=38)[:2]
+        hl_line1 = lines[0] if len(lines) > 0 else ""
+        hl_line2 = lines[1] if len(lines) > 1 else ""
+
+        seg1_d = 4   # intro
+        seg2_d = 21  # main
+        seg3_d = 5   # outro
+        zoom_frames = seg2_d * FPS
+
+        # ── ffmpeg complex filtergraph ──────────────────────────────────────
+        # Segment 1: solid red bg + BREAKING NEWS text
+        # Segment 2: image zoompan + semi-transparent headline bar
+        # Segment 3: dark bg + outro text
+        filter_complex = (
+            # ── Seg 1: red intro ──
+            f"color=c=#CC0000:s={W}x{H}:d={seg1_d}[s1base];"
+            f"[s1base]"
+            f"drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
+            f"fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:"
+            f"box=0,"
+            f"drawtext=fontfile={font_reg}:text='India BBC News':"
+            f"fontsize=36:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+50:"
+            f"box=0,"
+            f"fade=t=in:st=0:d=0.4,fade=t=out:st={seg1_d-0.5}:d=0.5"
+            f"[seg1];"
+
+            # ── Seg 2: image + headline bar ──
+            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+            f"crop={W}:{H},"
+            f"zoompan=z='min(zoom+0.0006,1.25)':d={zoom_frames}:s={W}x{H},"
+            f"fps={FPS}[zoomed];"
+
+            # bottom bar overlay (semi-transparent dark rectangle)
+            f"color=c=black@0.72:s={W}x220[bar];"
+            f"[zoomed][bar]overlay=0:H-220[img_bar];"
+
+            # red accent strip above bar
+            f"color=c=#CC0000:s={W}x8[strip];"
+            f"[img_bar][strip]overlay=0:H-220[img_strip];"
+
+            # headline text on bar
+            f"[img_strip]"
+            f"drawtext=fontfile={font_bold}:text='{hl_line1}':"
+            f"fontsize=46:fontcolor=white:x=30:y=H-200:box=0,"
+            + (
+                f"drawtext=fontfile={font_reg}:text='{hl_line2}':"
+                f"fontsize=38:fontcolor=white@0.9:x=30:y=H-145:box=0,"
+                if hl_line2 else ""
+            ) +
+            f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+            f"fontsize=28:fontcolor=#FF4444:x=30:y=H-85:box=0,"
+            f"fade=t=in:st=0:d=0.5,fade=t=out:st={seg2_d-0.6}:d=0.6"
+            f"[seg2];"
+
+            # ── Seg 3: dark outro ──
+            f"color=c=#111111:s={W}x{H}:d={seg3_d}[s3base];"
+            f"[s3base]"
+            f"drawtext=fontfile={font_bold}:text='Stay Informed':"
+            f"fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-60:box=0,"
+            f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+            f"fontsize=46:fontcolor=#FF4444:x=(w-text_w)/2:y=(h-text_h)/2+20:box=0,"
+            f"drawtext=fontfile={font_reg}:text='Follow us on Instagram \\& Facebook':"
+            f"fontsize=30:fontcolor=white@0.7:x=(w-text_w)/2:y=(h-text_h)/2+90:box=0,"
+            f"fade=t=in:st=0:d=0.5"
+            f"[seg3];"
+
+            # ── Concat all 3 segments ──
+            f"[seg1][seg2][seg3]concat=n=3:v=1:a=0[v]"
+        )
+
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", img_path,
-            "-vf", (
-                f"zoompan=z='min(zoom+0.0010,1.3)':d={total_frames}:s=1080x1080,"
-                f"fps={fps}"
-            ),
-            "-t", str(duration),
+            "-loop", "1", "-i", img_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
             "-c:v", "libx264",
             "-preset", "fast",
+            "-crf", "23",
             "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
             "-an",
             out_path,
         ]
-        result = subprocess.run(cmd, capture_output=True, timeout=90)
+        result = subprocess.run(cmd, capture_output=True, timeout=180)
         _os.unlink(img_path)
 
         if result.returncode != 0:
-            print(f"[WARN] ffmpeg failed: {result.stderr.decode()[:300]}")
+            print(f"[WARN] ffmpeg failed: {result.stderr.decode()[:400]}")
             return None, None
 
         with open(out_path, "rb") as vf:
             video_bytes = vf.read()
 
-        print(f"[SOCIAL] Video created: {len(video_bytes)//1024}KB, {duration}s")
+        print(f"[SOCIAL] Video created: {len(video_bytes)//1024}KB, {seg1_d+seg2_d+seg3_d}s")
         return video_bytes, out_path
     except Exception as e:
         print(f"[WARN] Video creation failed: {e}")
