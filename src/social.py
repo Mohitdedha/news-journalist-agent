@@ -32,6 +32,7 @@ TWITTER_ACCESS_SECRET= os.environ.get("TWITTER_ACCESS_SECRET", "")
 TELEGRAM_BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID  = os.environ.get("TELEGRAM_CHANNEL_ID", "")
 PEXELS_API_KEY       = os.environ.get("PEXELS_API_KEY", "")
+UNSPLASH_ACCESS_KEY  = os.environ.get("UNSPLASH_ACCESS_KEY", "")
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
 
@@ -529,174 +530,190 @@ def _fetch_pexels_video(query, fallback_query="news world"):
     return None, None
 
 
+# ── Unsplash multi-image fetch for slideshow video ───────────────────────────
+
+def _fetch_unsplash_images(query, count=4):
+    """
+    Fetch `count` relevant images from Unsplash for a slideshow.
+    Returns list of image bytes. Falls back to fewer images on error.
+    """
+    if not UNSPLASH_ACCESS_KEY:
+        return []
+    results = []
+    try:
+        resp = requests.get(
+            "https://api.unsplash.com/search/photos",
+            headers={"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"},
+            params={"query": query, "per_page": count + 2, "orientation": "landscape"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        photos = resp.json().get("results", [])
+        for photo in photos[:count]:
+            url = photo.get("urls", {}).get("regular", "")
+            if not url:
+                continue
+            dl = requests.get(url, timeout=30)
+            dl.raise_for_status()
+            results.append(dl.content)
+        print(f"[VIDEO] Unsplash: fetched {len(results)} images for '{query}'")
+    except Exception as e:
+        print(f"[WARN] Unsplash image fetch failed: {e}")
+    return results
+
+
 # ── Video creation (proper news-style broadcast video) ───────────────────────
 
-def _make_article_video(image_bytes, headline, duration=30, video_query=None):
+def _make_article_video(image_bytes, headline, duration=35, video_query=None):
     """
-    Create a 30-second broadcast news-style MP4.
-    If PEXELS_API_KEY is set, uses a real stock video clip as the main segment.
-    Otherwise falls back to image with Ken Burns zoom.
-
-    Structure:
-      Seg 1 (4s)  — Red "BREAKING NEWS" intro
-      Seg 2 (21s) — Stock video clip OR image zoom + headline bar overlay
-      Seg 3 (5s)  — Dark outro with website URL
+    Create a ~35s broadcast news-style video using a multi-image slideshow:
+      Seg 1 (3s)        — Red BREAKING NEWS intro
+      Seg 2 (4 x 6s)   — 4 topic-relevant images from Unsplash, each with
+                          Ken Burns zoom + smooth crossfade + headline bar
+      Seg 3 (5s)        — Dark outro with website + social CTA
+    Falls back to single image if Unsplash unavailable.
     """
     try:
         import subprocess, tempfile, os as _os, textwrap
 
         W, H, FPS = 1080, 1080, 25
 
-        # Font paths (Ubuntu / GitHub Actions)
-        font_bold  = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-        font_reg   = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+        font_bold = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+        font_reg  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
         if not _os.path.exists(font_bold):
             font_bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
             font_reg  = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-        # Save original image
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            f.write(image_bytes)
-            img_path = f.name
+        out_path = tempfile.mktemp(suffix=".mp4")
 
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-            out_path = f.name
-
-        # Wrap headline to ~40 chars per line, max 2 lines
+        # Wrap headline text
         safe_hl = headline.replace("'", "\\'").replace(":", "\\:").replace("%", "\\%")[:120]
-        lines = textwrap.wrap(safe_hl, width=38)[:2]
-        hl_line1 = lines[0] if len(lines) > 0 else ""
-        hl_line2 = lines[1] if len(lines) > 1 else ""
+        lines = textwrap.wrap(safe_hl, width=36)[:2]
+        hl1 = lines[0] if lines else ""
+        hl2 = lines[1] if len(lines) > 1 else ""
 
-        seg1_d = 4   # intro
-        seg2_d = 21  # main
-        seg3_d = 5   # outro
+        # Fetch 4 topic images from Unsplash
+        query = video_query or " ".join(headline.split()[:4])
+        slide_images = _fetch_unsplash_images(query, count=4)
 
-        # ── Try Pexels stock video for main segment ───────────────────────
-        query = video_query or " ".join(headline.split()[:5])
-        pexels_bytes, _ = _fetch_pexels_video(query)
+        # Always include the original article image as first slide
+        all_images = [image_bytes] + [b for b in slide_images if b != image_bytes]
+        all_images = all_images[:4]  # max 4 slides
+        if len(all_images) < 2:
+            # need at least 2; duplicate if only 1
+            all_images = (all_images * 4)[:4]
 
-        clip_path = None
-        if pexels_bytes:
-            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-                f.write(pexels_bytes)
-                clip_path = f.name
-            print(f"[VIDEO] Using Pexels stock clip for main segment")
+        n = len(all_images)
+        slide_d = 7          # seconds per slide
+        intro_d = 3
+        outro_d = 5
+        zoom_frames = slide_d * FPS
 
-        # ── Build text overlay helper strings ────────────────────────────
-        hl_overlay = (
-            # bottom bar
-            f"color=c=black@0.72:s={W}x220[bar];"
-            f"[main_scaled][bar]overlay=0:H-220[barred];"
-            f"color=c=#CC0000:s={W}x8[strip];"
-            f"[barred][strip]overlay=0:H-220[stripped];"
-            f"[stripped]"
-            f"drawtext=fontfile={font_bold}:text='{hl_line1}':"
-            f"fontsize=46:fontcolor=white:x=30:y=H-200:box=0,"
-            + (
-                f"drawtext=fontfile={font_reg}:text='{hl_line2}':"
-                f"fontsize=38:fontcolor=white@0.9:x=30:y=H-145:box=0,"
-                if hl_line2 else ""
-            ) +
-            f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
-            f"fontsize=28:fontcolor=#FF4444:x=30:y=H-85:box=0,"
-            f"fade=t=in:st=0:d=0.5,fade=t=out:st={seg2_d-0.6}:d=0.6"
-            f"[seg2]"
+        # Save image files
+        img_paths = []
+        for i, ib in enumerate(all_images):
+            f = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            f.write(ib); f.close()
+            img_paths.append(f.name)
+
+        # ── Build ffmpeg inputs ──────────────────────────────────────────
+        inputs = []
+        for p in img_paths:
+            inputs += ["-loop", "1", "-i", p]
+
+        # ── Build filtergraph ────────────────────────────────────────────
+        # Headline bar overlay template (applied to each slide output)
+        def slide_filter(idx, out_label, fade_out_at):
+            bar_label   = f"bar{idx}"
+            strip_label = f"strip{idx}"
+            scaled      = f"sc{idx}"
+            return (
+                f"[{idx}:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+                f"crop={W}:{H},"
+                f"zoompan=z='min(zoom+0.0005,1.20)':d={zoom_frames}:s={W}x{H},"
+                f"fps={FPS}[{scaled}];"
+                f"color=c=black@0.70:s={W}x200[{bar_label}];"
+                f"[{scaled}][{bar_label}]overlay=0:H-200[{bar_label}x];"
+                f"color=c=#CC0000:s={W}x7[{strip_label}];"
+                f"[{bar_label}x][{strip_label}]overlay=0:H-200[{strip_label}x];"
+                f"[{strip_label}x]"
+                f"drawtext=fontfile={font_bold}:text='{hl1}':"
+                f"fontsize=44:fontcolor=white:x=28:y=H-185:box=0,"
+                + (
+                    f"drawtext=fontfile={font_reg}:text='{hl2}':"
+                    f"fontsize=34:fontcolor=white@0.9:x=28:y=H-132:box=0,"
+                    if hl2 else ""
+                ) +
+                f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+                f"fontsize=26:fontcolor=#FF5555:x=28:y=H-80:box=0,"
+                f"drawtext=fontfile={font_bold}:text='LIVE':"
+                f"fontsize=26:fontcolor=white:x=W-110:y=28:box=1:boxcolor=#CC0000@0.9:boxborderw=8,"
+                f"fade=t=in:st=0:d=0.6,fade=t=out:st={fade_out_at}:d=0.7"
+                f"[{out_label}]"
+            )
+
+        fc_parts = []
+        slide_labels = []
+        for i in range(n):
+            lbl = f"slide{i}"
+            fc_parts.append(slide_filter(i, lbl, slide_d - 0.7))
+            slide_labels.append(lbl)
+
+        # Intro segment
+        fc_parts.append(
+            f"color=c=#CC0000:s={W}x{H}:d={intro_d}[si];"
+            f"[si]drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
+            f"fontsize=76:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-55:box=0,"
+            f"drawtext=fontfile={font_reg}:text='India BBC News | World Latest':"
+            f"fontsize=34:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+45:box=0,"
+            f"fade=t=in:st=0:d=0.3,fade=t=out:st={intro_d-0.5}:d=0.5[intro]"
         )
 
-        if clip_path:
-            # Main segment: trim/loop stock video to seg2_d seconds + overlay
-            filter_complex = (
-                # ── Seg 1: red intro ──
-                f"color=c=#CC0000:s={W}x{H}:d={seg1_d}[s1];"
-                f"[s1]drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
-                f"fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:box=0,"
-                f"drawtext=fontfile={font_reg}:text='India BBC News':"
-                f"fontsize=36:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+50:box=0,"
-                f"fade=t=in:st=0:d=0.4,fade=t=out:st={seg1_d-0.5}:d=0.5[seg1];"
+        # Outro segment
+        fc_parts.append(
+            f"color=c=#0d0d0d:s={W}x{H}:d={outro_d}[so];"
+            f"[so]drawtext=fontfile={font_bold}:text='Stay Informed':"
+            f"fontsize=66:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-70:box=0,"
+            f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+            f"fontsize=50:fontcolor=#FF5555:x=(w-text_w)/2:y=(h-text_h)/2+10:box=0,"
+            f"drawtext=fontfile={font_reg}:text='Follow on Instagram \\& Facebook':"
+            f"fontsize=30:fontcolor=white@0.65:x=(w-text_w)/2:y=(h-text_h)/2+85:box=0,"
+            f"fade=t=in:st=0:d=0.5[outro]"
+        )
 
-                # ── Seg 2: stock video clip (loop if short) + headline overlay ──
-                f"[1:v]loop=loop=-1:size=32767,trim=duration={seg2_d},"
-                f"setpts=PTS-STARTPTS,"
-                f"scale={W}:{H}:force_original_aspect_ratio=increase,"
-                f"crop={W}:{H}[main_scaled];"
-                + hl_overlay + ";"
+        # Concat: intro + all slides + outro
+        all_labels = "[intro]" + "".join(f"[{l}]" for l in slide_labels) + "[outro]"
+        total_segs = 1 + n + 1
+        fc_parts.append(f"{all_labels}concat=n={total_segs}:v=1:a=0[v]")
 
-                # ── Seg 3: dark outro ──
-                f"color=c=#111111:s={W}x{H}:d={seg3_d}[s3];"
-                f"[s3]drawtext=fontfile={font_bold}:text='Stay Informed':"
-                f"fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-60:box=0,"
-                f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
-                f"fontsize=46:fontcolor=#FF4444:x=(w-text_w)/2:y=(h-text_h)/2+20:box=0,"
-                f"drawtext=fontfile={font_reg}:text='Follow on Instagram \\& Facebook':"
-                f"fontsize=30:fontcolor=white@0.7:x=(w-text_w)/2:y=(h-text_h)/2+90:box=0,"
-                f"fade=t=in:st=0:d=0.5[seg3];"
+        filter_complex = ";".join(fc_parts)
 
-                f"[seg1][seg2][seg3]concat=n=3:v=1:a=0[v]"
-            )
-            cmd = [
-                "ffmpeg", "-y",
-                "-loop", "1", "-i", img_path,   # input 0: fallback image
-                "-i", clip_path,                 # input 1: pexels clip
+        cmd = (
+            ["ffmpeg", "-y"]
+            + inputs
+            + [
                 "-filter_complex", filter_complex,
                 "-map", "[v]",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
                 out_path,
             ]
-        else:
-            # Fallback: image Ken Burns zoom
-            zoom_frames = seg2_d * FPS
-            filter_complex = (
-                f"color=c=#CC0000:s={W}x{H}:d={seg1_d}[s1];"
-                f"[s1]drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
-                f"fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:box=0,"
-                f"drawtext=fontfile={font_reg}:text='India BBC News':"
-                f"fontsize=36:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+50:box=0,"
-                f"fade=t=in:st=0:d=0.4,fade=t=out:st={seg1_d-0.5}:d=0.5[seg1];"
+        )
 
-                f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-                f"crop={W}:{H},"
-                f"zoompan=z='min(zoom+0.0006,1.25)':d={zoom_frames}:s={W}x{H},"
-                f"fps={FPS}[main_scaled];"
-                + hl_overlay + ";"
-
-                f"color=c=#111111:s={W}x{H}:d={seg3_d}[s3];"
-                f"[s3]drawtext=fontfile={font_bold}:text='Stay Informed':"
-                f"fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-60:box=0,"
-                f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
-                f"fontsize=46:fontcolor=#FF4444:x=(w-text_w)/2:y=(h-text_h)/2+20:box=0,"
-                f"drawtext=fontfile={font_reg}:text='Follow on Instagram \\& Facebook':"
-                f"fontsize=30:fontcolor=white@0.7:x=(w-text_w)/2:y=(h-text_h)/2+90:box=0,"
-                f"fade=t=in:st=0:d=0.5[seg3];"
-
-                f"[seg1][seg2][seg3]concat=n=3:v=1:a=0[v]"
-            )
-            cmd = [
-                "ffmpeg", "-y",
-                "-loop", "1", "-i", img_path,
-                "-filter_complex", filter_complex,
-                "-map", "[v]",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
-                out_path,
-            ]
-
-        result = subprocess.run(cmd, capture_output=True, timeout=240)
-        for p in [img_path, clip_path]:
-            if p and _os.path.exists(p):
-                try: _os.unlink(p)
-                except Exception: pass
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        for p in img_paths:
+            try: _os.unlink(p)
+            except Exception: pass
 
         if result.returncode != 0:
-            print(f"[WARN] ffmpeg failed: {result.stderr.decode()[:400]}")
+            print(f"[WARN] ffmpeg failed: {result.stderr.decode()[:500]}")
             return None, None
 
         with open(out_path, "rb") as vf:
             video_bytes = vf.read()
 
-        src = "stock clip" if clip_path else "image zoom"
-        print(f"[SOCIAL] Video created ({src}): {len(video_bytes)//1024}KB, {seg1_d+seg2_d+seg3_d}s")
+        total_d = intro_d + n * slide_d + outro_d
+        print(f"[SOCIAL] Video created: {n} slides, {total_d}s, {len(video_bytes)//1024}KB")
         return video_bytes, out_path
     except Exception as e:
         print(f"[WARN] Video creation failed: {e}")
