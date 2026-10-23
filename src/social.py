@@ -31,6 +31,7 @@ TWITTER_ACCESS_TOKEN = os.environ.get("TWITTER_ACCESS_TOKEN", "")
 TWITTER_ACCESS_SECRET= os.environ.get("TWITTER_ACCESS_SECRET", "")
 TELEGRAM_BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHANNEL_ID  = os.environ.get("TELEGRAM_CHANNEL_ID", "")
+PEXELS_API_KEY       = os.environ.get("PEXELS_API_KEY", "")
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
 
@@ -480,15 +481,66 @@ def post_reddit(headline, meta_description, post_url, tags):
         return False
 
 
+# ── Pexels stock video search ────────────────────────────────────────────────
+
+def _fetch_pexels_video(query, fallback_query="news world"):
+    """
+    Search Pexels for a relevant stock video clip (portrait/square preferred).
+    Returns (video_bytes, ext) or (None, None).
+    """
+    if not PEXELS_API_KEY:
+        return None, None
+    try:
+        # Try portrait first (better for Instagram/Facebook), then landscape
+        for orientation in ("portrait", "landscape"):
+            resp = requests.get(
+                "https://api.pexels.com/videos/search",
+                headers={"Authorization": PEXELS_API_KEY},
+                params={"query": query, "per_page": 5, "orientation": orientation,
+                        "size": "medium"},
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                continue
+            videos = resp.json().get("videos", [])
+            if not videos:
+                continue
+            # Pick the first video with a 15-60s duration
+            for v in videos:
+                dur = v.get("duration", 0)
+                if 8 <= dur <= 90:
+                    # Get best quality file ≤ 1080p
+                    files = sorted(
+                        [f for f in v.get("video_files", []) if f.get("width", 0) <= 1920],
+                        key=lambda f: f.get("width", 0), reverse=True
+                    )
+                    if files:
+                        url = files[0]["link"]
+                        dl = requests.get(url, timeout=60, stream=True)
+                        dl.raise_for_status()
+                        data = b"".join(dl.iter_content(1024 * 64))
+                        print(f"[VIDEO] Pexels clip: {len(data)//1024}KB, {dur}s — {query}")
+                        return data, "mp4"
+        # Retry with fallback query
+        if query != fallback_query:
+            return _fetch_pexels_video(fallback_query, fallback_query)
+    except Exception as e:
+        print(f"[WARN] Pexels video fetch failed: {e}")
+    return None, None
+
+
 # ── Video creation (proper news-style broadcast video) ───────────────────────
 
-def _make_article_video(image_bytes, headline, duration=30):
+def _make_article_video(image_bytes, headline, duration=30, video_query=None):
     """
-    Create a 30-second broadcast news-style MP4:
-      Seg 1 (4s)  — Red "BREAKING NEWS" intro banner
-      Seg 2 (21s) — Article image with Ken Burns zoom + headline bar at bottom
+    Create a 30-second broadcast news-style MP4.
+    If PEXELS_API_KEY is set, uses a real stock video clip as the main segment.
+    Otherwise falls back to image with Ken Burns zoom.
+
+    Structure:
+      Seg 1 (4s)  — Red "BREAKING NEWS" intro
+      Seg 2 (21s) — Stock video clip OR image zoom + headline bar overlay
       Seg 3 (5s)  — Dark outro with website URL
-    Returns (video_bytes, tmp_video_path) or (None, None) on failure.
     """
     try:
         import subprocess, tempfile, os as _os, textwrap
@@ -519,41 +571,26 @@ def _make_article_video(image_bytes, headline, duration=30):
         seg1_d = 4   # intro
         seg2_d = 21  # main
         seg3_d = 5   # outro
-        zoom_frames = seg2_d * FPS
 
-        # ── ffmpeg complex filtergraph ──────────────────────────────────────
-        # Segment 1: solid red bg + BREAKING NEWS text
-        # Segment 2: image zoompan + semi-transparent headline bar
-        # Segment 3: dark bg + outro text
-        filter_complex = (
-            # ── Seg 1: red intro ──
-            f"color=c=#CC0000:s={W}x{H}:d={seg1_d}[s1base];"
-            f"[s1base]"
-            f"drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
-            f"fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:"
-            f"box=0,"
-            f"drawtext=fontfile={font_reg}:text='India BBC News':"
-            f"fontsize=36:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+50:"
-            f"box=0,"
-            f"fade=t=in:st=0:d=0.4,fade=t=out:st={seg1_d-0.5}:d=0.5"
-            f"[seg1];"
+        # ── Try Pexels stock video for main segment ───────────────────────
+        query = video_query or " ".join(headline.split()[:5])
+        pexels_bytes, _ = _fetch_pexels_video(query)
 
-            # ── Seg 2: image + headline bar ──
-            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},"
-            f"zoompan=z='min(zoom+0.0006,1.25)':d={zoom_frames}:s={W}x{H},"
-            f"fps={FPS}[zoomed];"
+        clip_path = None
+        if pexels_bytes:
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+                f.write(pexels_bytes)
+                clip_path = f.name
+            print(f"[VIDEO] Using Pexels stock clip for main segment")
 
-            # bottom bar overlay (semi-transparent dark rectangle)
+        # ── Build text overlay helper strings ────────────────────────────
+        hl_overlay = (
+            # bottom bar
             f"color=c=black@0.72:s={W}x220[bar];"
-            f"[zoomed][bar]overlay=0:H-220[img_bar];"
-
-            # red accent strip above bar
+            f"[main_scaled][bar]overlay=0:H-220[barred];"
             f"color=c=#CC0000:s={W}x8[strip];"
-            f"[img_bar][strip]overlay=0:H-220[img_strip];"
-
-            # headline text on bar
-            f"[img_strip]"
+            f"[barred][strip]overlay=0:H-220[stripped];"
+            f"[stripped]"
             f"drawtext=fontfile={font_bold}:text='{hl_line1}':"
             f"fontsize=46:fontcolor=white:x=30:y=H-200:box=0,"
             + (
@@ -564,39 +601,92 @@ def _make_article_video(image_bytes, headline, duration=30):
             f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
             f"fontsize=28:fontcolor=#FF4444:x=30:y=H-85:box=0,"
             f"fade=t=in:st=0:d=0.5,fade=t=out:st={seg2_d-0.6}:d=0.6"
-            f"[seg2];"
-
-            # ── Seg 3: dark outro ──
-            f"color=c=#111111:s={W}x{H}:d={seg3_d}[s3base];"
-            f"[s3base]"
-            f"drawtext=fontfile={font_bold}:text='Stay Informed':"
-            f"fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-60:box=0,"
-            f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
-            f"fontsize=46:fontcolor=#FF4444:x=(w-text_w)/2:y=(h-text_h)/2+20:box=0,"
-            f"drawtext=fontfile={font_reg}:text='Follow us on Instagram \\& Facebook':"
-            f"fontsize=30:fontcolor=white@0.7:x=(w-text_w)/2:y=(h-text_h)/2+90:box=0,"
-            f"fade=t=in:st=0:d=0.5"
-            f"[seg3];"
-
-            # ── Concat all 3 segments ──
-            f"[seg1][seg2][seg3]concat=n=3:v=1:a=0[v]"
+            f"[seg2]"
         )
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-loop", "1", "-i", img_path,
-            "-filter_complex", filter_complex,
-            "-map", "[v]",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            "-an",
-            out_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, timeout=180)
-        _os.unlink(img_path)
+        if clip_path:
+            # Main segment: trim/loop stock video to seg2_d seconds + overlay
+            filter_complex = (
+                # ── Seg 1: red intro ──
+                f"color=c=#CC0000:s={W}x{H}:d={seg1_d}[s1];"
+                f"[s1]drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
+                f"fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:box=0,"
+                f"drawtext=fontfile={font_reg}:text='India BBC News':"
+                f"fontsize=36:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+50:box=0,"
+                f"fade=t=in:st=0:d=0.4,fade=t=out:st={seg1_d-0.5}:d=0.5[seg1];"
+
+                # ── Seg 2: stock video clip (loop if short) + headline overlay ──
+                f"[1:v]loop=loop=-1:size=32767,trim=duration={seg2_d},"
+                f"setpts=PTS-STARTPTS,"
+                f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+                f"crop={W}:{H}[main_scaled];"
+                + hl_overlay + ";"
+
+                # ── Seg 3: dark outro ──
+                f"color=c=#111111:s={W}x{H}:d={seg3_d}[s3];"
+                f"[s3]drawtext=fontfile={font_bold}:text='Stay Informed':"
+                f"fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-60:box=0,"
+                f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+                f"fontsize=46:fontcolor=#FF4444:x=(w-text_w)/2:y=(h-text_h)/2+20:box=0,"
+                f"drawtext=fontfile={font_reg}:text='Follow on Instagram \\& Facebook':"
+                f"fontsize=30:fontcolor=white@0.7:x=(w-text_w)/2:y=(h-text_h)/2+90:box=0,"
+                f"fade=t=in:st=0:d=0.5[seg3];"
+
+                f"[seg1][seg2][seg3]concat=n=3:v=1:a=0[v]"
+            )
+            cmd = [
+                "ffmpeg", "-y",
+                "-loop", "1", "-i", img_path,   # input 0: fallback image
+                "-i", clip_path,                 # input 1: pexels clip
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
+                out_path,
+            ]
+        else:
+            # Fallback: image Ken Burns zoom
+            zoom_frames = seg2_d * FPS
+            filter_complex = (
+                f"color=c=#CC0000:s={W}x{H}:d={seg1_d}[s1];"
+                f"[s1]drawtext=fontfile={font_bold}:text='BREAKING NEWS':"
+                f"fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-50:box=0,"
+                f"drawtext=fontfile={font_reg}:text='India BBC News':"
+                f"fontsize=36:fontcolor=white@0.85:x=(w-text_w)/2:y=(h-text_h)/2+50:box=0,"
+                f"fade=t=in:st=0:d=0.4,fade=t=out:st={seg1_d-0.5}:d=0.5[seg1];"
+
+                f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+                f"crop={W}:{H},"
+                f"zoompan=z='min(zoom+0.0006,1.25)':d={zoom_frames}:s={W}x{H},"
+                f"fps={FPS}[main_scaled];"
+                + hl_overlay + ";"
+
+                f"color=c=#111111:s={W}x{H}:d={seg3_d}[s3];"
+                f"[s3]drawtext=fontfile={font_bold}:text='Stay Informed':"
+                f"fontsize=64:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-60:box=0,"
+                f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+                f"fontsize=46:fontcolor=#FF4444:x=(w-text_w)/2:y=(h-text_h)/2+20:box=0,"
+                f"drawtext=fontfile={font_reg}:text='Follow on Instagram \\& Facebook':"
+                f"fontsize=30:fontcolor=white@0.7:x=(w-text_w)/2:y=(h-text_h)/2+90:box=0,"
+                f"fade=t=in:st=0:d=0.5[seg3];"
+
+                f"[seg1][seg2][seg3]concat=n=3:v=1:a=0[v]"
+            )
+            cmd = [
+                "ffmpeg", "-y",
+                "-loop", "1", "-i", img_path,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an",
+                out_path,
+            ]
+
+        result = subprocess.run(cmd, capture_output=True, timeout=240)
+        for p in [img_path, clip_path]:
+            if p and _os.path.exists(p):
+                try: _os.unlink(p)
+                except Exception: pass
 
         if result.returncode != 0:
             print(f"[WARN] ffmpeg failed: {result.stderr.decode()[:400]}")
@@ -605,7 +695,8 @@ def _make_article_video(image_bytes, headline, duration=30):
         with open(out_path, "rb") as vf:
             video_bytes = vf.read()
 
-        print(f"[SOCIAL] Video created: {len(video_bytes)//1024}KB, {seg1_d+seg2_d+seg3_d}s")
+        src = "stock clip" if clip_path else "image zoom"
+        print(f"[SOCIAL] Video created ({src}): {len(video_bytes)//1024}KB, {seg1_d+seg2_d+seg3_d}s")
         return video_bytes, out_path
     except Exception as e:
         print(f"[WARN] Video creation failed: {e}")
@@ -744,7 +835,7 @@ def post_to_all(article, post_url, image_url=None, post_video=False):
     content_html = article.get("content_html", f"<p>{meta_desc}</p>")
     tags         = article.get("tags", [])
 
-    # Optionally create video (Ken Burns slideshow) for this post
+    # Optionally create video — uses Pexels stock clip if key set, else image zoom
     video_bytes = None
     video_path = None
     if post_video and image_url:
@@ -752,7 +843,9 @@ def post_to_all(article, post_url, image_url=None, post_video=False):
         try:
             img_resp = requests.get(image_url, timeout=15)
             img_resp.raise_for_status()
-            video_bytes, video_path = _make_article_video(img_resp.content, headline)
+            # Use image_query or first 5 words of headline for Pexels search
+            vq = article.get("image_query") or " ".join(headline.split()[:5])
+            video_bytes, video_path = _make_article_video(img_resp.content, headline, video_query=vq)
         except Exception as e:
             print(f"[WARN] Video prep failed: {e}")
 
