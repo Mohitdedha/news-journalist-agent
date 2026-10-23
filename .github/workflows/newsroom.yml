@@ -2,7 +2,12 @@ name: News Journalist Agent
 
 on:
   schedule:
-    # Every hour from 5am to 11pm UTC (10:30am to 4:30am IST)
+    # 24/7 — every hour, targeting India + US + UK audiences
+    - cron: '0 0 * * *'
+    - cron: '0 1 * * *'
+    - cron: '0 2 * * *'
+    - cron: '0 3 * * *'
+    - cron: '0 4 * * *'
     - cron: '0 5 * * *'
     - cron: '0 6 * * *'
     - cron: '0 7 * * *'

@@ -113,13 +113,16 @@ def discover_stories(max_per_run=10):
 
     candidates = []
 
-    # Add Google Trends stories (top 3)
-    trend_stories = fetch_google_trends_stories(geo="IN", max_stories=3)
-    for ts in trend_stories:
-        norm = ts["norm_url"]
-        too_similar = any(title_similarity(ts["title"], t) > 0.65 for t in seen_titles[-200:])
-        if norm not in seen_urls and not too_similar:
-            candidates.append(ts)
+    # Add Google Trends stories from India + US + UK
+    for geo, label in [("IN", "India"), ("US", "US"), ("GB", "UK")]:
+        trend_stories = fetch_google_trends_stories(geo=geo, max_stories=2)
+        for ts in trend_stories:
+            ts["summary"] = ts["summary"].replace(f"Trending topic in India: ", f"Trending in {label}: ")
+            ts["source_name"] = f"Google Trends {label}"
+            norm = ts["norm_url"]
+            too_similar = any(title_similarity(ts["title"], t) > 0.65 for t in seen_titles[-200:])
+            if norm not in seen_urls and not too_similar:
+                candidates.append(ts)
 
     for source in sources_cfg["rss_feeds"]:
         entries = fetch_feed(source)

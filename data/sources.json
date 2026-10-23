@@ -55,7 +55,16 @@
     {"url": "https://www.thehindu.com/education/feeder/default.rss", "name": "The Hindu Education", "category": "education", "wp_category_id": 14},
     {"url": "https://auto.ndtv.com/rss/feeds/news.xml", "name": "NDTV Auto", "category": "technology", "wp_category_id": 33},
     {"url": "https://www.wired.com/feed/rss", "name": "Wired", "category": "technology", "wp_category_id": 33},
-    {"url": "https://www.theverge.com/rss/index.xml", "name": "The Verge", "category": "technology", "wp_category_id": 33}
+    {"url": "https://www.theverge.com/rss/index.xml", "name": "The Verge", "category": "technology", "wp_category_id": 33},
+    {"url": "https://rss.cnn.com/rss/edition.rss", "name": "CNN World", "category": "global", "wp_category_id": 206},
+    {"url": "https://rss.cnn.com/rss/money_news_international.rss", "name": "CNN Business", "category": "business", "wp_category_id": 193},
+    {"url": "https://feeds.nbcnews.com/nbcnews/public/news", "name": "NBC News", "category": "global", "wp_category_id": 206},
+    {"url": "https://www.forbes.com/real-time/feed2/", "name": "Forbes", "category": "business", "wp_category_id": 193},
+    {"url": "https://feeds.bloomberg.com/markets/news.rss", "name": "Bloomberg Markets", "category": "economy", "wp_category_id": 12},
+    {"url": "https://www.politico.com/rss/politics08.xml", "name": "Politico US", "category": "global", "wp_category_id": 206},
+    {"url": "https://feeds.skynews.com/feeds/rss/technology.xml", "name": "Sky News Tech", "category": "technology", "wp_category_id": 33},
+    {"url": "https://www.standard.co.uk/rss", "name": "Evening Standard UK", "category": "europe-uk", "wp_category_id": 31},
+    {"url": "https://www.mirror.co.uk/news/uk-news/rss.xml", "name": "Daily Mirror UK", "category": "europe-uk", "wp_category_id": 31}
   ],
   "wp_categories": {
     "global": 206,
