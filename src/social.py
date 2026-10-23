@@ -95,6 +95,13 @@ def post_facebook(headline, meta_description, post_url, image_url, tags):
     if not FB_PAGE_ID or not FB_PAGE_ACCESS_TOKEN:
         print("[SOCIAL] Facebook: credentials not set — skipping")
         return False
+    print(f"[FB-DEBUG] token_len={len(FB_PAGE_ACCESS_TOKEN)} page_id_len={len(FB_PAGE_ID)}")
+    # Quick auth check before posting
+    try:
+        chk = requests.get(f"{GRAPH_API}/me", params={"fields": "id,name", "access_token": FB_PAGE_ACCESS_TOKEN}, timeout=10)
+        print(f"[FB-DEBUG] /me check: {chk.status_code} {chk.json().get('name','?')} id={chk.json().get('id','?')}")
+    except Exception as chk_e:
+        print(f"[FB-DEBUG] /me check failed: {chk_e}")
     try:
         caption = _make_caption(headline, meta_description, post_url, tags, "facebook")
         # If we have an image URL, post as photo (more reach than link post)
