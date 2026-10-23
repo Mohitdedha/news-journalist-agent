@@ -22,9 +22,9 @@ import time
 import requests
 
 # ── Credentials (from environment / GitHub Secrets) ─────────────────────────
-FB_PAGE_ID           = os.environ.get("FB_PAGE_ID", "")
-FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN", "")
-IG_USER_ID           = os.environ.get("IG_USER_ID", "")  # Instagram Business Account ID
+FB_PAGE_ID           = os.environ.get("FB_PAGE_ID", "").strip()
+FB_PAGE_ACCESS_TOKEN = os.environ.get("FB_PAGE_ACCESS_TOKEN", "").strip()
+IG_USER_ID           = os.environ.get("IG_USER_ID", "").strip()  # Instagram Business Account ID
 TWITTER_API_KEY      = os.environ.get("TWITTER_API_KEY", "")
 TWITTER_API_SECRET   = os.environ.get("TWITTER_API_SECRET", "")
 TWITTER_ACCESS_TOKEN = os.environ.get("TWITTER_ACCESS_TOKEN", "")
