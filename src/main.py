@@ -121,7 +121,7 @@ def run():
             # 4b. Add internal links to related articles
             print("[LINK] Adding internal links...")
             article["content_html"] = add_internal_links(
-                article["content_html"], article["headline"]
+                article["content_html"], article["headline"], max_links=1
             )
 
             # 5. Find and process image

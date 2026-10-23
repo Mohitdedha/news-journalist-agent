@@ -2,10 +2,40 @@
 Search engine discovery: IndexNow (Bing/Yandex), sitemap ping.
 Does NOT assume Google Indexing API eligibility — uses standard sitemap pings.
 """
+import os
 import time
 import hashlib
 import requests
-from config import INDEXNOW_KEY, WP_URL
+from config import INDEXNOW_KEY, WP_URL, WP_USER, WP_APP_PASSWORD
+
+
+def ensure_indexnow_key_file():
+    """Upload the IndexNow key verification file to WordPress if not already present."""
+    if not INDEXNOW_KEY or not WP_USER or not WP_APP_PASSWORD:
+        return
+    key_url = f"https://indiabbcnews.com/{INDEXNOW_KEY}.txt"
+    try:
+        r = requests.get(key_url, timeout=8)
+        if r.status_code == 200 and r.text.strip() == INDEXNOW_KEY:
+            return  # already verified
+    except Exception:
+        pass
+    # Upload via WordPress REST API as a plain-text file
+    try:
+        resp = requests.post(
+            f"{WP_URL}/wp-json/wp/v2/media",
+            headers={"Content-Disposition": f'attachment; filename="{INDEXNOW_KEY}.txt"',
+                     "Content-Type": "text/plain"},
+            data=INDEXNOW_KEY.encode(),
+            auth=(WP_USER, WP_APP_PASSWORD),
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            print(f"[OK] IndexNow key file uploaded: {key_url}")
+        else:
+            print(f"[WARN] IndexNow key upload failed: {resp.status_code}")
+    except Exception as e:
+        print(f"[WARN] IndexNow key upload error: {e}")
 
 
 def submit_indexnow(urls):
@@ -16,6 +46,8 @@ def submit_indexnow(urls):
     if not INDEXNOW_KEY:
         print("[INFO] INDEXNOW_KEY not set — skipping IndexNow submission")
         return
+
+    ensure_indexnow_key_file()
 
     if isinstance(urls, str):
         urls = [urls]
