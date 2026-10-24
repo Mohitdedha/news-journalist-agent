@@ -180,7 +180,7 @@ def create_post(article, wp_category_id, featured_media_id=None, publish_status=
 
     # Internal linking — fetch recent posts and inject 2 links
     recent_posts = _fetch_recent_posts(limit=20)
-    content = _inject_internal_links(content, headline, recent_posts, max_links=2)
+    content = _inject_internal_links(content, headline, recent_posts, max_links=3)
 
     # Add disclosure paragraph at end
     disclosure = (
