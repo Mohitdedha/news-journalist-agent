@@ -81,8 +81,17 @@ def _make_caption(headline, meta_description, post_url, tags, platform="generic"
             f'<a href="{post_url}">Read full article →</a>\n\n'
             f"{hashtags}"
         )
+    elif platform == "instagram":
+        # Instagram: headline + summary + link in bio note + hashtags (SEO relevant)
+        return (
+            f"{headline}\n\n"
+            f"{meta_description}\n\n"
+            f"🔗 Full story: {post_url}\n\n"
+            f"{hashtags}\n"
+            f"#IndiaBBCNews #BreakingNews #WorldNews #LatestNews"
+        )
     else:
-        # Facebook / Instagram / LinkedIn
+        # Facebook / LinkedIn
         return (
             f"{headline}\n\n"
             f"{meta_description}\n\n"
@@ -137,85 +146,184 @@ def post_facebook(headline, meta_description, post_url, image_url, tags):
 
 # ── Instagram image branding ─────────────────────────────────────────────────
 
-def _make_instagram_image(image_bytes, headline):
+def _make_instagram_image(image_bytes, headline, summary="", category="BREAKING"):
     """
-    Takes raw image bytes and returns Instagram-ready branded image bytes.
-    - Square crop 1080x1080
-    - Dark gradient overlay at bottom
-    - White headline text (truncated)
-    - Red accent bar + indiabbcnews.com watermark
+    India BBC News branded Instagram post — reference style:
+      Photo top ~52%, dark maroon panel bottom ~48%
+      Real logo (assets/new_logo.jpeg) top-right, bg removed via edge flood-fill
+      BREAKING | NEWS badge + 3 red dots
+      Headline bold white CAPS, summary gray, Read More + Source buttons
     """
     try:
         from PIL import Image, ImageDraw, ImageFont
-        import io
+        from collections import deque
+        import io, os as _os
 
+        SIZE = 1080
+
+        def try_font(path, size):
+            try: return ImageFont.truetype(path, size)
+            except Exception: return None
+
+        BOLD_PATHS = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ]
+        REG_PATHS = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        def best_font(paths, size):
+            for p in paths:
+                f = try_font(p, size)
+                if f: return f
+            return ImageFont.load_default()
+
+        f_break   = best_font(BOLD_PATHS, 34)
+        f_hl      = best_font(BOLD_PATHS, 46)
+        f_summary = best_font(REG_PATHS,  24)
+        f_btn     = best_font(BOLD_PATHS, 24)
+
+        # ── Photo: center-crop to 1080x1080 ──────────────────────────────
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-        # Center-crop to square
         w, h = img.size
         side = min(w, h)
-        left = (w - side) // 2
-        top = (h - side) // 2
-        img = img.crop((left, top, left + side, top + side))
-        img = img.resize((1080, 1080), Image.LANCZOS)
+        img = img.crop(((w-side)//2, (h-side)//2, (w+side)//2, (h+side)//2))
+        img = img.resize((SIZE, SIZE), Image.LANCZOS)
 
-        # Dark gradient overlay (bottom 35%) using RGBA compositing
-        overlay_h = int(1080 * 0.35)
-        overlay_top = 1080 - overlay_h
-        overlay = Image.new("RGBA", (1080, 1080), (0, 0, 0, 0))
-        grad_draw = ImageDraw.Draw(overlay)
-        for y in range(overlay_top, 1080):
-            alpha = int(200 * (y - overlay_top) / overlay_h)
-            grad_draw.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
+        PHOTO_H = 560
+        PANEL_TOP = PHOTO_H
+        PANEL_H = SIZE - PANEL_TOP
+        RED = (204, 0, 0)
+        WHITE = (255, 255, 255)
+        LIGHT_GRAY = (205, 205, 205)
+        PAD = 44
+        MAX_W = SIZE - PAD * 2
+
+        # ── Dark maroon gradient panel ────────────────────────────────────
         img = img.convert("RGBA")
-        img = Image.alpha_composite(img, overlay)
-        img = img.convert("RGB")
+        panel = Image.new("RGBA", (SIZE, PANEL_H), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(panel)
+        for y in range(PANEL_H):
+            t = y / PANEL_H
+            pd.line([(0, y), (SIZE, y)], fill=(int(26+(10-26)*t), 2, 2, 255))
+        fp = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+        fp.paste(panel, (0, PANEL_TOP))
+        img = Image.alpha_composite(img, fp)
 
+        # Photo-to-panel blend gradient
+        grad = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grad)
+        for y in range(160):
+            alpha = int(210 * (y / 160))
+            gd.line([(0, PHOTO_H-160+y), (SIZE, PHOTO_H-160+y)], fill=(10, 0, 0, alpha))
+        img = Image.alpha_composite(img, grad)
+        img = img.convert("RGB")
         draw = ImageDraw.Draw(img)
 
-        # Red accent bar at very bottom
-        draw.rectangle([(0, 1040), (1080, 1080)], fill=(204, 0, 0))
+        # ── Red sparkle dots ──────────────────────────────────────────────
+        for (cx, cy, r) in [(SIZE-50, SIZE-50, 16), (SIZE-28, SIZE-85, 9),
+                             (38, SIZE-48, 11), (16, SIZE-78, 6)]:
+            draw.ellipse([(cx-r, cy-r), (cx+r, cy+r)], fill=RED)
 
-        # Try to load a system font (Ubuntu runner has DejaVu)
-        try:
-            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-            font_url = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
-            font_hl = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-        except Exception:
-            font_bold = ImageFont.load_default()
-            font_url = font_bold
-            font_hl = font_bold
+        # ── Real logo: edge flood-fill to remove white background ─────────
+        LOGO_PATH = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)),
+                                  "assets", "new_logo.jpeg")
+        if _os.path.exists(LOGO_PATH):
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            lw, lh = logo.size
+            pixels = logo.load()
 
-        # Website URL on red bar
-        draw.text((540, 1060), "indiabbcnews.com", fill="white", font=font_url, anchor="mm")
+            def is_white(x, y):
+                r, g, b, a = pixels[x, y]
+                return r > 220 and g > 220 and b > 220
 
-        # Headline text (truncated, 2 lines max)
-        hl = headline[:80] + ("…" if len(headline) > 80 else "")
-        words = hl.split()
-        lines = []
-        current = ""
-        for word in words:
-            test = (current + " " + word).strip()
-            if len(test) <= 38:
-                current = test
-            else:
-                if current:
-                    lines.append(current)
-                current = word
-            if len(lines) == 2:
-                current = ""
-                break
-        if current:
-            lines.append(current)
-        lines = lines[:2]
+            visited = [[False]*lh for _ in range(lw)]
+            queue = deque()
+            for x in range(lw):
+                for y in [0, lh-1]:
+                    if not visited[x][y] and is_white(x, y):
+                        visited[x][y] = True; queue.append((x, y))
+            for y in range(lh):
+                for x in [0, lw-1]:
+                    if not visited[x][y] and is_white(x, y):
+                        visited[x][y] = True; queue.append((x, y))
+            while queue:
+                cx, cy = queue.popleft()
+                pixels[cx, cy] = (255, 255, 255, 0)
+                for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]:
+                    nx, ny = cx+dx, cy+dy
+                    if 0 <= nx < lw and 0 <= ny < lh and not visited[nx][ny] and is_white(nx, ny):
+                        visited[nx][ny] = True; queue.append((nx, ny))
 
-        y_text = 970 - (len(lines) * 42)
-        for line in lines:
-            draw.text((40, y_text), line, fill="white", font=font_hl)
-            y_text += 42
+            LOGO_SIZE = 155
+            logo = logo.resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
+            img = img.convert("RGBA")
+            img.paste(logo, (SIZE - LOGO_SIZE - PAD + 10, PAD - 10), logo)
+            img = img.convert("RGB")
+            draw = ImageDraw.Draw(img)
+
+        # ── BREAKING | NEWS badge ─────────────────────────────────────────
+        BADGE_Y = PANEL_TOP + 28
+        BADGE_X = PAD
+        BRK_W, BRK_H = 205, 50
+        draw.rectangle([(BADGE_X, BADGE_Y), (BADGE_X+BRK_W, BADGE_Y+BRK_H)], fill=RED)
+        draw.text((BADGE_X+14, BADGE_Y+8), "BREAKING", fill=WHITE, font=f_break)
+        chev_x = BADGE_X + BRK_W
+        NEWS_W = 130
+        draw.polygon([(chev_x, BADGE_Y), (chev_x+NEWS_W+28, BADGE_Y),
+                      (chev_x+NEWS_W+12, BADGE_Y+BRK_H), (chev_x-6, BADGE_Y+BRK_H)], fill=WHITE)
+        draw.text((chev_x+14, BADGE_Y+8), "NEWS", fill=(20, 20, 20), font=f_break)
+
+        # Three red dots right of badge
+        dot_cy = BADGE_Y + BRK_H // 2
+        for i in range(3):
+            dx = chev_x + NEWS_W + 40 + i * 34
+            draw.ellipse([(dx, dot_cy-10), (dx+20, dot_cy+10)], fill=RED)
+
+        # ── Headline (pixel-accurate wrap) ────────────────────────────────
+        def wrap_px(text, font, max_px):
+            words = text.split(); lines = []; line = ""
+            for word in words:
+                test = (line + " " + word).strip()
+                if font.getbbox(test)[2] <= max_px: line = test
+                else:
+                    if line: lines.append(line)
+                    line = word
+            if line: lines.append(line)
+            return lines
+
+        HL_Y = BADGE_Y + BRK_H + 18
+        for line in wrap_px(headline.upper(), f_hl, MAX_W)[:3]:
+            draw.text((PAD, HL_Y), line, fill=WHITE, font=f_hl)
+            HL_Y += 60
+
+        # Divider
+        draw.rectangle([(PAD, HL_Y+6), (SIZE-PAD, HL_Y+7)], fill=(120, 0, 0))
+
+        # ── Summary ───────────────────────────────────────────────────────
+        SUM_Y = HL_Y + 18
+        if summary:
+            for line in wrap_px(summary, f_summary, MAX_W)[:3]:
+                draw.text((PAD, SUM_Y), line, fill=LIGHT_GRAY, font=f_summary)
+                SUM_Y += 31
+
+        # ── Buttons ───────────────────────────────────────────────────────
+        BTN_Y = SIZE - 112
+        BTN_H = 50
+        BTN1_W = int((MAX_W - 16) / 2)
+        BTN2_X = PAD + BTN1_W + 16
+        BTN2_W = SIZE - BTN2_X - PAD
+        draw.rounded_rectangle([(PAD, BTN_Y), (PAD+BTN1_W, BTN_Y+BTN_H)], radius=25, fill=RED)
+        draw.text((PAD+BTN1_W//2, BTN_Y+BTN_H//2), "Read More...", fill=WHITE, font=f_btn, anchor="mm")
+        draw.rounded_rectangle([(BTN2_X, BTN_Y), (BTN2_X+BTN2_W, BTN_Y+BTN_H)],
+                                radius=25, outline=WHITE, width=2, fill=(35, 0, 0))
+        draw.text((BTN2_X+BTN2_W//2, BTN_Y+BTN_H//2),
+                  "www.indiabbcnews.com", fill=WHITE, font=f_btn, anchor="mm")
 
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=88)
+        img.save(buf, format="JPEG", quality=92)
+        print("[SOCIAL] Instagram image branded (India BBC News style)")
         return buf.getvalue()
     except Exception as e:
         print(f"[WARN] Instagram image branding failed: {e} — using original")
@@ -866,6 +974,32 @@ def post_to_all(article, post_url, image_url=None, post_video=False):
         except Exception as e:
             print(f"[WARN] Video prep failed: {e}")
 
+    # Build branded Instagram image and upload to WP for a public URL
+    branded_image_url = image_url  # fallback to original
+    if image_url:
+        try:
+            raw_img = requests.get(image_url, timeout=15)
+            raw_img.raise_for_status()
+            branded_bytes = _make_instagram_image(raw_img.content, headline, meta_desc)
+            from config import WP_URL, WP_USER, WP_APP_PASSWORD
+            wp_resp = requests.post(
+                f"{WP_URL}/wp-json/wp/v2/media",
+                auth=(WP_USER, WP_APP_PASSWORD),
+                headers={
+                    "Content-Disposition": 'attachment; filename="ig_branded.jpg"',
+                    "Content-Type": "image/jpeg",
+                },
+                data=branded_bytes,
+                timeout=30,
+            )
+            if wp_resp.status_code in (200, 201):
+                branded_image_url = wp_resp.json().get("source_url", image_url)
+                print(f"[SOCIAL] Branded IG image uploaded: {branded_image_url}")
+            else:
+                print(f"[WARN] Branded image upload failed ({wp_resp.status_code}) — using original")
+        except Exception as e:
+            print(f"[WARN] Branded image prep failed: {e} — using original")
+
     results = {}
     # Facebook: video post if video available, else photo post
     if post_video and video_bytes:
@@ -875,13 +1009,13 @@ def post_to_all(article, post_url, image_url=None, post_video=False):
     else:
         results["facebook"] = post_facebook(headline, meta_desc, post_url, image_url, tags)
 
-    # Instagram: Reel if video available, else photo post
+    # Instagram: Reel if video available, else branded photo post
     if post_video and video_path:
         results["instagram"] = post_instagram_reel(headline, meta_desc, post_url, video_path, tags)
         if not results["instagram"]:
-            results["instagram"] = post_instagram(headline, meta_desc, post_url, image_url, tags)
+            results["instagram"] = post_instagram(headline, meta_desc, post_url, branded_image_url, tags)
     else:
-        results["instagram"] = post_instagram(headline, meta_desc, post_url, image_url, tags)
+        results["instagram"] = post_instagram(headline, meta_desc, post_url, branded_image_url, tags)
 
     # Cleanup video temp file
     if video_path:
