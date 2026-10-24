@@ -20,7 +20,7 @@ jobs:
           FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
           FB_USER_TOKEN: ${{ secrets.FB_LONG_LIVED_USER_TOKEN }}
           FB_PAGE_ID: "1475426142310736"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           GH_REPO: ${{ github.repository }}
         run: |
           python3 << 'EOF'
