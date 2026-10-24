@@ -1,0 +1,69 @@
+name: Refresh FB Token (One-Time Setup)
+
+# Run this workflow ONCE with a short-lived User Token from Graph Explorer.
+# It exchanges it for a permanent Page Access Token and saves it to GitHub Secrets.
+# After that, FB_PAGE_ACCESS_TOKEN never expires (unless you change FB password).
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_token:
+        description: |
+          Short-lived User Token from Graph Explorer:
+          1. Go to https://developers.facebook.com/tools/explorer/
+          2. Select App: IndiaBBCNews, User or Page: User Token
+          3. Click Generate Access Token
+          4. Copy the token and paste here
+        required: true
+        type: string
+
+permissions:
+  secrets: write
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate permanent Page Access Token
+        env:
+          FB_APP_ID: "2041352109878333"
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
+          USER_TOKEN: ${{ inputs.user_token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FB_PAGE_ID: "1475426142310736"
+        run: |
+          echo "Step 1: Exchanging short-lived user token for long-lived token (60 days)..."
+          LONG_LIVED=$(curl -sf "https://graph.facebook.com/oauth/access_token?grant_type=fb_exchange_token&client_id=$FB_APP_ID&client_secret=$FB_APP_SECRET&fb_exchange_token=$USER_TOKEN" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['access_token'])")
+
+          if [ -z "$LONG_LIVED" ]; then
+            echo "❌ Failed to get long-lived user token. Check your user token and app secret."
+            exit 1
+          fi
+          echo "✅ Got long-lived user token"
+
+          echo "Step 2: Getting permanent Page Access Token for page $FB_PAGE_ID..."
+          PAGE_TOKEN=$(curl -sf "https://graph.facebook.com/v21.0/me/accounts?access_token=$LONG_LIVED" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+import os
+page_id = os.environ['FB_PAGE_ID']
+for page in data.get('data', []):
+    if page.get('id') == page_id:
+        print(page['access_token'])
+        break
+")
+
+          if [ -z "$PAGE_TOKEN" ]; then
+            echo "❌ Could not find page token for page ID $FB_PAGE_ID"
+            echo "Available pages:"
+            curl -sf "https://graph.facebook.com/v21.0/me/accounts?access_token=$LONG_LIVED" | python3 -c "import sys,json; [print(p['id'], p['name']) for p in json.load(sys.stdin).get('data',[])]"
+            exit 1
+          fi
+
+          echo "Step 3: Saving permanent token to GitHub Secrets..."
+          echo "$PAGE_TOKEN" | gh secret set FB_PAGE_ACCESS_TOKEN --repo ${{ github.repository }}
+
+          echo ""
+          echo "✅ SUCCESS! FB_PAGE_ACCESS_TOKEN updated with PERMANENT token."
+          echo "   This token never expires (unless you change your Facebook password)."
+          echo "   You never need to run this workflow again!"
