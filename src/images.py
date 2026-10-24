@@ -200,7 +200,7 @@ def make_thumbnail(img, headline="", category="global"):
         bar_h = 34
         draw.rectangle([(0, H - bar_h - 3), (W, H - bar_h)], fill=(204, 0, 0))
         draw.rectangle([(0, H - bar_h), (W, H)], fill=(15, 15, 15))
-        url_text = "indiabbcnews.com"
+        url_text = "Website: indiabbcnews.com"
         try:
             ub = draw.textbbox((0, 0), url_text, font=f_url)
             uw = ub[2] - ub[0]
