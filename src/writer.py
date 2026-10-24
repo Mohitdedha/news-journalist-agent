@@ -61,7 +61,7 @@ def _get_available_model():
     return _GROQ_MODELS[0]
 
 
-def _groq_call(prompt, max_tokens=700, temperature=0.75):
+def _groq_call(prompt, max_tokens=700, temperature=0.92):
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY not set in GitHub Secrets")
     model = _get_available_model()
@@ -135,6 +135,13 @@ HUMAN WRITING RULES — critical:
 - Use contractions freely: it's, didn't, won't, they've, there's, can't.
 - Include one specific, unexpected detail that proves you reported this — not summarized it.
 - Choose H2 headings that fit THIS story's angle. Do NOT use generic labels like "What Led Here", "Key Details", "What Happens Next" every time.
+
+AI-DETECTION BYPASS — critical for passing ZeroGPT/GPTZero:
+- Write with HIGH BURSTINESS: mix very short sentences (3-5 words) with very long ones (35+ words with commas and dashes). AI writes uniform-length sentences — humans don't.
+- Add ONE personal/reporter observation: "Watching the press briefing, it was clear that...", "The numbers tell a story that officials seem reluctant to acknowledge."
+- Use informal transitions occasionally: "And yet.", "But here's the thing.", "That's not nothing.", "So what now?"
+- Throw in ONE mild imperfection: a parenthetical aside, an em-dash interruption, or a rhetorical question mid-paragraph.
+- Never start 3 paragraphs with the same grammatical structure (e.g. "The", "The", "The").
 
 BANNED PHRASES — never use, not even once:
 "In a significant development", "amid growing concerns", "shed light on", "in the wake of",
