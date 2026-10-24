@@ -319,7 +319,7 @@ def _make_instagram_image(image_bytes, headline, summary="", category="BREAKING"
         draw.rounded_rectangle([(BTN2_X, BTN_Y), (BTN2_X+BTN2_W, BTN_Y+BTN_H)],
                                 radius=25, outline=WHITE, width=2, fill=(35, 0, 0))
         draw.text((BTN2_X+BTN2_W//2, BTN_Y+BTN_H//2),
-                  "www.indiabbcnews.com", fill=WHITE, font=f_btn, anchor="mm")
+                  "Website: indiabbcnews.com", fill=WHITE, font=f_btn, anchor="mm")
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=92)
@@ -752,7 +752,7 @@ def _make_article_video(image_bytes, headline, duration=35, video_query=None):
                     f"fontsize=34:fontcolor=white@0.9:x=28:y=H-132:box=0,"
                     if hl2 else ""
                 ) +
-                f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+                f"drawtext=fontfile={font_reg}:text='Website\\: indiabbcnews.com':"
                 f"fontsize=26:fontcolor=#FF5555:x=28:y=H-80:box=0,"
                 f"drawtext=fontfile={font_bold}:text='LIVE':"
                 f"fontsize=26:fontcolor=white:x=W-110:y=28:box=1:boxcolor=#CC0000@0.9:boxborderw=8,"
@@ -782,7 +782,7 @@ def _make_article_video(image_bytes, headline, duration=35, video_query=None):
             f"color=c=#0d0d0d:s={W}x{H}:d={outro_d}[so];"
             f"[so]drawtext=fontfile={font_bold}:text='Stay Informed':"
             f"fontsize=66:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-70:box=0,"
-            f"drawtext=fontfile={font_reg}:text='indiabbcnews.com':"
+            f"drawtext=fontfile={font_reg}:text='Website\\: indiabbcnews.com':"
             f"fontsize=50:fontcolor=#FF5555:x=(w-text_w)/2:y=(h-text_h)/2+10:box=0,"
             f"drawtext=fontfile={font_reg}:text='Follow on Instagram \\& Facebook':"
             f"fontsize=30:fontcolor=white@0.65:x=(w-text_w)/2:y=(h-text_h)/2+85:box=0,"
