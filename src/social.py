@@ -1005,9 +1005,9 @@ def post_to_all(article, post_url, image_url=None, post_video=False):
     if post_video and video_bytes:
         results["facebook"] = post_facebook_video(headline, meta_desc, post_url, video_bytes, tags)
         if not results["facebook"]:
-            results["facebook"] = post_facebook(headline, meta_desc, post_url, image_url, tags)
+            results["facebook"] = post_facebook(headline, meta_desc, post_url, branded_image_url, tags)
     else:
-        results["facebook"] = post_facebook(headline, meta_desc, post_url, image_url, tags)
+        results["facebook"] = post_facebook(headline, meta_desc, post_url, branded_image_url, tags)
 
     # Instagram: Reel if video available, else branded photo post
     if post_video and video_path:
