@@ -1,0 +1,97 @@
+name: Refresh Facebook Token
+
+on:
+  schedule:
+    # Har 50 din pe chalega (token 60 din mein expire hota hai)
+    - cron: '0 3 1 */2 *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  secrets: write
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: pip install PyNaCl requests -q
+
+      - name: Refresh tokens and update GitHub Secrets
+        env:
+          FB_APP_ID: "2041352109878333"
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
+          FB_USER_TOKEN: ${{ secrets.FB_LONG_LIVED_USER_TOKEN }}
+          FB_PAGE_ID: "1475426142310736"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 << 'EOF'
+          import os, json, base64, sys
+          import requests
+          from nacl import encoding, public
+
+          app_id     = os.environ["FB_APP_ID"]
+          app_secret = os.environ["FB_APP_SECRET"]
+          user_token = os.environ["FB_USER_TOKEN"]
+          page_id    = os.environ["FB_PAGE_ID"]
+          gh_token   = os.environ["GH_TOKEN"]
+          repo       = os.environ["GH_REPO"]
+
+          # ── Step 1: Refresh Long-Lived User Token (60 days → fresh 60 days) ──
+          print("[INFO] Refreshing Long-Lived User Token...")
+          r = requests.get("https://graph.facebook.com/oauth/access_token", params={
+              "grant_type": "fb_exchange_token",
+              "client_id": app_id,
+              "client_secret": app_secret,
+              "fb_exchange_token": user_token,
+          })
+          r.raise_for_status()
+          new_user_token = r.json()["access_token"]
+          print("[OK] New Long-Lived User Token obtained")
+
+          # ── Step 2: Get permanent Page Token ──
+          print("[INFO] Getting Page Access Token...")
+          r2 = requests.get(f"https://graph.facebook.com/v21.0/me/accounts", params={
+              "access_token": new_user_token
+          })
+          r2.raise_for_status()
+          pages = r2.json().get("data", [])
+          page = next((p for p in pages if p["id"] == page_id), None)
+          if not page:
+              print(f"[ERROR] Page {page_id} not found in: {pages}")
+              sys.exit(1)
+          page_token = page["access_token"]
+          print("[OK] Page Access Token obtained")
+
+          # ── Step 3: Update GitHub Secrets ──
+          def encrypt(pub_key_b64: str, secret: str) -> str:
+              pk = public.PublicKey(pub_key_b64.encode(), encoding.Base64Encoder())
+              encrypted = public.SealedBox(pk).encrypt(secret.encode())
+              return base64.b64encode(encrypted).decode()
+
+          headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github+json"}
+
+          pk_resp = requests.get(f"https://api.github.com/repos/{repo}/actions/secrets/public-key", headers=headers)
+          pk_resp.raise_for_status()
+          pub_key = pk_resp.json()["key"]
+          key_id  = pk_resp.json()["key_id"]
+
+          def update_secret(name, value):
+              enc = encrypt(pub_key, value)
+              resp = requests.put(
+                  f"https://api.github.com/repos/{repo}/actions/secrets/{name}",
+                  headers=headers,
+                  json={"encrypted_value": enc, "key_id": key_id}
+              )
+              if resp.status_code in (201, 204):
+                  print(f"[OK] {name} updated")
+              else:
+                  print(f"[ERROR] {name} update failed: {resp.status_code} {resp.text}")
+                  sys.exit(1)
+
+          update_secret("FB_PAGE_ACCESS_TOKEN", page_token)
+          update_secret("FB_LONG_LIVED_USER_TOKEN", new_user_token)
+
+          print("[SUCCESS] All tokens refreshed automatically!")
+          EOF
