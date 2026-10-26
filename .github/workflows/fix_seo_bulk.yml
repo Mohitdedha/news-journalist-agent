@@ -1,0 +1,121 @@
+name: Bulk SEO Fix (one-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-seo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pip install requests -q
+
+      - name: Run bulk SEO fix
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+        run: |
+          python3 << 'EOF'
+          import os, re, time, requests
+
+          WP_URL = os.environ["WP_URL"]
+          AUTH   = (os.environ["WP_USER"], os.environ["WP_APP_PASSWORD"])
+
+          STOP = {"the","a","an","of","in","on","at","to","for","is","are","was","were",
+                  "and","or","but","with","from","by","as","its","it","this","that","s",
+                  "after","before","over","under","about","into","than","will","has","have",
+                  "new","says","say","amid","who","what","why","how","when","where"}
+
+          def clean(h):
+              h = re.sub(r'<[^>]+>', '', h)
+              for e, r in [("&#8217;","'"),("&#8211;","-"),("&amp;","&"),("&#8220;",'"'),("&#8221;",'"')]:
+                  h = h.replace(e, r)
+              return h.strip()
+
+          def make_seo_title(h):
+              suffix = " - India BBC News"
+              max_hl = 65 - len(suffix)
+              if len(h) > max_hl:
+                  h = h[:max_hl-3].rsplit(" ", 1)[0] + "..."
+              return h + suffix
+
+          def make_meta_desc(h, ct):
+              sentences = re.split(r'(?<=[.!?])\s+', ct.strip())
+              for s in sentences:
+                  s = s.strip()
+                  if 80 <= len(s) <= 150:
+                      return s[:150]
+                  if len(s) > 150:
+                      return s[:147] + "..."
+              desc = h
+              if len(desc) < 80:
+                  desc += ". Read the full story on India BBC News."
+              return desc[:150]
+
+          def make_keyphrase(h):
+              words = [w.strip("'\",.!?:()") for w in h.split()
+                       if len(w.strip("'\",.!?:()")) > 3
+                       and w.strip("'\",.!?:()").lower() not in STOP]
+              return " ".join(words[:3])[:50] if words else h.split()[0]
+
+          # Fetch all posts
+          posts = []
+          page = 1
+          while True:
+              r = requests.get(f"{WP_URL}/wp-json/wp/v2/posts",
+                  params={"per_page": 100, "page": page, "status": "publish",
+                          "_fields": "id,title,content,meta"},
+                  auth=AUTH, timeout=30)
+              if r.status_code == 400:
+                  break
+              r.raise_for_status()
+              batch = r.json()
+              if not batch:
+                  break
+              posts.extend(batch)
+              print(f"Page {page}: {len(batch)} posts (total: {len(posts)})")
+              page += 1
+              time.sleep(0.3)
+
+          print(f"\nTotal: {len(posts)} posts\n")
+          updated = skipped = errors = 0
+
+          for i, post in enumerate(posts):
+              pid = post["id"]
+              headline = clean(post.get("title", {}).get("rendered", ""))
+              meta = post.get("meta", {})
+              et = (meta.get("_yoast_wpseo_title") or "").strip()
+              ed = (meta.get("_yoast_wpseo_metadesc") or "").strip()
+              ek = (meta.get("_yoast_wpseo_focuskw") or "").strip()
+
+              if et and ed and ek:
+                  skipped += 1
+                  continue
+
+              ct = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', post.get("content", {}).get("rendered", ""))).strip()
+
+              t = et or make_seo_title(headline)
+              d = ed or make_meta_desc(headline, ct)
+              k = ek or make_keyphrase(headline)
+
+              try:
+                  resp = requests.post(f"{WP_URL}/wp-json/wp/v2/posts/{pid}",
+                      auth=AUTH,
+                      json={"meta": {"_yoast_wpseo_title": t, "_yoast_wpseo_metadesc": d, "_yoast_wpseo_focuskw": k}},
+                      timeout=15)
+                  resp.raise_for_status()
+                  updated += 1
+                  if updated % 25 == 0:
+                      print(f"[{i+1}/{len(posts)}] Updated {updated} posts so far...")
+                  time.sleep(0.4)
+              except Exception as e:
+                  errors += 1
+                  print(f"[ERROR] pid={pid}: {e}")
+                  time.sleep(1)
+
+          print(f"\n[DONE] Updated: {updated} | Skipped: {skipped} | Errors: {errors}")
+          EOF
