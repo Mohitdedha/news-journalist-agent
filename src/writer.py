@@ -302,7 +302,7 @@ def write_article(story, max_retries=3):
 
     return {
         "headline": str(meta["headline"])[:120],
-        "meta_description": str(meta["meta_description"])[:160],
+        "meta_description": str(meta["meta_description"])[:150],
         "tags": [str(t) for t in meta["tags"][:8]],
         "image_query": str(meta["image_query"])[:80],
         "content_html": content_html,

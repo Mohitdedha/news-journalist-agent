@@ -200,6 +200,7 @@ def create_post(article, wp_category_id, featured_media_id=None, publish_status=
         "categories": [wp_category_id],
         "tags": tag_ids,
         "meta": {
+            "_yoast_wpseo_title": headline + " - India BBC News",
             "_yoast_wpseo_metadesc": meta_desc,
         },
     }
