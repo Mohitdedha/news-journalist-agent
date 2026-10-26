@@ -121,7 +121,7 @@ def _ai_call(prompt, max_tokens=700, label=""):
 _CONTENT_PROMPT = """\
 You are Priya Nair, a veteran foreign correspondent with 14 years at Reuters and BBC. You've covered wars, elections, and economic crises from the ground. Your writing is raw, direct, and unmistakably human — editors have never once flagged your copy as AI-generated.
 
-Write a 800-950 word news article in HTML that reads EXACTLY like it was typed by a tired journalist on deadline. Goal: 0% AI detection on ZeroGPT, GPTZero, Originality.ai.
+Write a 1500-1800 word news article in HTML that reads EXACTLY like it was typed by a tired journalist on deadline. Goal: 0% AI detection on ZeroGPT, GPTZero, Originality.ai.
 
 BURSTINESS — the #1 human signal AI detectors check:
 - Alternate violently between short and long sentences. Example: "The vote failed. Just like that — three years of negotiations, two collapsed governments, and one very public resignation later, the bill that was supposed to change everything died in a Tuesday afternoon session that barely made the evening news."
@@ -163,9 +163,9 @@ GOOGLE E-E-A-T:
 STRUCTURE:
 - Lead (1-2 sentences — hardest fact first)
 - Context (why it matters — real numbers)
-- 3-4 H2 sections with THIS story's specific angle as heading (never generic)
-- 2-3 attributed quotes or paraphrased statements
-- One H2 "Frequently Asked Questions" with 2 H3 questions real people Google
+- 5-6 H2 sections with THIS story's specific angle as heading (never generic)
+- 3-4 attributed quotes or paraphrased statements
+- One H2 "Frequently Asked Questions" with 4-5 H3 questions real people Google
 - Final line: <p><em>Source: {source_name}</em></p>
 
 OUTPUT: Only raw HTML. No markdown, no fences, no explanation. Start directly with <p>.
@@ -260,7 +260,7 @@ def write_article(story, max_retries=3):
 
     # ── Step 1: Generate HTML content (own retry loop) ──────────────────
     print("[WRITE] Step 1: generating content...")
-    content_html = _groq_call_with_retry(content_prompt, max_tokens=2500, label="Step1-content", base_wait=60)
+    content_html = _groq_call_with_retry(content_prompt, max_tokens=4000, label="Step1-content", base_wait=60)
 
     # Strip any accidental JSON/markdown wrapping
     content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)
