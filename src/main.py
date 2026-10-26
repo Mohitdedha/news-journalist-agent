@@ -24,6 +24,66 @@ from linker import add_internal_links
 PUBLISH_STATUS = os.environ.get("PUBLISH_STATUS", "draft")  # override per run
 MAX_STORIES = int(os.environ.get("MAX_STORIES", "2"))
 
+# Keyword → wp_category_id mapping (checked against headline + content)
+_CATEGORY_KEYWORDS = [
+    ({"ipl", "cricket", "virat", "rohit", "dhoni", "bcci", "test match", "odi", "t20", "world cup cricket",
+      "sachin", "kohli", "bumrah", "shami", "icc", "cricinfo", "cricbuzz"}, 29),           # Cricket
+    ({"football", "fifa", "premier league", "la liga", "champions league", "nfl", "nba",
+      "olympics", "commonwealth games", "asian games", "hockey", "badminton", "tennis",
+      "formula 1", "f1", "wrestling", "boxing", "athletics", "chess olympiad"}, 34),       # Sports
+    ({"modi", "bjp", "congress", "rahul gandhi", "parliament", "lok sabha", "rajya sabha",
+      "election", "cm ", "chief minister", "governor", "india government", "indian politics",
+      "delhi", "mumbai", "kashmir", "gujarat", "maharashtra", "rajasthan", "uttar pradesh",
+      "bihar", "bengal", "tamil", "kerala", "telangana", "andhra", "karnataka", "punjab",
+      "aap ", "trinamool", "shiv sena", "nda ", "upa ", "cbi", "ed ", "supreme court india",
+      "high court india", "india flood", "india earthquake", "india fire"}, 211),           # India
+    ({"ai ", "artificial intelligence", "chatgpt", "openai", "google gemini", "meta llama",
+      "iphone", "android", "samsung", "apple ", "microsoft", "tesla", "spacex", "elon musk",
+      "startup", "app ", "software", "cybersecurity", "hack", "data breach", "5g", "semiconductor",
+      "chip", "nvidia", "amazon aws", "cloud computing", "robot", "automation", "tech "}, 33),  # Technology
+    ({"gdp", "inflation", "rbi", "reserve bank", "interest rate", "stock market", "sensex",
+      "nifty", "rupee", "dollar", "budget", "tax", "gst", "imf", "world bank", "recession",
+      "economic", "economy", "finance minister", "sebi", "ipo ", "mutual fund"}, 12),      # Economy
+    ({"uk ", "britain", "london", "scotland", "wales", "ireland", "eu ", "europe", "france",
+      "germany", "italy", "spain", "nato", "european union", "brexit"}, 31),               # Europe-UK
+    ({"bollywood", "hollywood", "actor", "actress", "film", "movie", "series", "ott",
+      "netflix", "amazon prime", "disney", "celebrity", "award", "oscar", "filmfare",
+      "music", "album", "singer", "concert", "fashion", "model"}, 189),                    # Entertainment
+    ({"nasa", "space", "mars", "moon", "asteroid", "climate change", "global warming",
+      "vaccine", "virus", "cancer", "research", "discovery", "scientist", "biology",
+      "physics", "chemistry", "environment", "pollution", "solar"}, 35),                   # Science
+    ({"school", "college", "university", "student", "exam", "board exam", "neet", "jee",
+      "upsc", "ssc", "scholarship", "education policy", "cbse", "icse"}, 14),              # Education
+    ({"health", "hospital", "doctor", "medicine", "diet", "fitness", "yoga", "mental health",
+      "disease", "treatment", "surgery", "nutrition", "wellness"}, 18),                    # Lifestyle
+    ({"business", "company", "corporate", "merger", "acquisition", "startup funding",
+      "revenue", "profit", "loss", "ceo", "chairman", "board of directors"}, 193),        # Business
+]
+
+_WP_CAT_NAMES = {
+    29: "Cricket", 34: "Sports", 211: "India", 33: "Technology",
+    12: "Economy", 31: "Europe-UK", 189: "Entertainment", 35: "Science",
+    14: "Education", 18: "Lifestyle", 193: "Business", 206: "Global"
+}
+
+
+def detect_category(headline, content_text="", fallback_id=206):
+    """
+    Scan headline + first 500 chars of content for keywords.
+    Returns the best-matching wp_category_id, or fallback_id if no match.
+    Priority: whichever category gets the most keyword hits wins.
+    """
+    text = (headline + " " + content_text[:500]).lower()
+    scores = {}
+    for keywords, cat_id in _CATEGORY_KEYWORDS:
+        hits = sum(1 for kw in keywords if kw in text)
+        if hits:
+            scores[cat_id] = scores.get(cat_id, 0) + hits
+    if scores:
+        best = max(scores, key=scores.get)
+        return best
+    return fallback_id
+
 
 def run():
     print("[START] News Journalist Agent")
@@ -153,10 +213,18 @@ def run():
             print(f"[OK] Image uploaded: media_id={featured_media_id}")
 
             # 6. Publish to WordPress
+            # Detect category from article content (overrides RSS source category)
+            content_plain = re.sub(r'<[^>]+>', ' ', article.get("content_html", ""))
+            detected_cat_id = detect_category(
+                article["headline"],
+                content_text=content_plain,
+                fallback_id=story["wp_category_id"],
+            )
+            print(f"[CATEGORY] {_WP_CAT_NAMES.get(detected_cat_id, detected_cat_id)} (id={detected_cat_id})")
             print(f"[PUBLISH] Creating post as '{PUBLISH_STATUS}'...")
             post_id, post_url = create_post(
                 article=article,
-                wp_category_id=story["wp_category_id"],
+                wp_category_id=detected_cat_id,
                 featured_media_id=featured_media_id,
                 publish_status=PUBLISH_STATUS
             )
