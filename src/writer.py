@@ -188,7 +188,7 @@ Story title: {title}
 Summary: {summary}
 
 JSON format — fill in real values:
-{{"headline": "Short punchy headline max 10 words, not a sentence fragment", "meta_description": "One factual sentence 120-155 chars, include key names/numbers", "tags": ["tag1","tag2","tag3","tag4","tag5"], "image_query": "specific location or person Unsplash search, NOT 'military soldier gun' — e.g. 'London parliament building', 'Khartoum Sudan street', 'Keir Starmer press conference'"}}
+{{"headline": "Short punchy headline max 10 words, not a sentence fragment", "meta_description": "One factual sentence 120-150 chars, include key names/numbers", "tags": ["tag1","tag2","tag3","tag4","tag5"], "image_query": "IMPORTANT: Never use politician or celebrity names as image query — Unsplash has NO photos of Indian politicians like Rahul Gandhi, Modi, etc. Instead use a LOCATION or THEME: e.g. 'Indian parliament building New Delhi', 'Mumbai city street India', 'Delhi government building', 'India flag', 'cricket stadium India', 'stock market trading floor'. Always pick a place or theme related to the story, never a person's name."}}
 """
 
 
