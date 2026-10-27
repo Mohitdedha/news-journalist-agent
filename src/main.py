@@ -222,11 +222,13 @@ def run():
             )
             print(f"[CATEGORY] {_WP_CAT_NAMES.get(detected_cat_id, detected_cat_id)} (id={detected_cat_id})")
             print(f"[PUBLISH] Creating post as '{PUBLISH_STATUS}'...")
+            cat_name = _WP_CAT_NAMES.get(detected_cat_id, story.get("category", ""))
             post_id, post_url = create_post(
                 article=article,
                 wp_category_id=detected_cat_id,
                 featured_media_id=featured_media_id,
-                publish_status=PUBLISH_STATUS
+                publish_status=PUBLISH_STATUS,
+                category_name=cat_name,
             )
 
             # 7. Record in history

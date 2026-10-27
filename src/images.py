@@ -116,6 +116,7 @@ _CATEGORY_COLORS = {
     "entertainment":(236, 72,  153), # pink
     "education":   (16,  185, 129),  # teal
     "europe-uk":   (37,  99,  235),  # blue
+    "auto":        (234, 88,  12),   # orange
 }
 _DEFAULT_CAT_COLOR = (204, 0, 0)
 
@@ -288,10 +289,23 @@ def upload_to_wordpress(image_bytes, filename, alt_text, caption=""):
         return None, None
 
 
-_GENERIC_FALLBACKS = ["news", "world news", "politics", "government", "city"]
+_CATEGORY_FALLBACKS = {
+    "auto":        ["car road highway", "motorcycle bike", "automobile showroom"],
+    "sports":      ["sports stadium crowd", "athletes training"],
+    "cricket":     ["cricket match stadium India", "cricket bat ball"],
+    "technology":  ["smartphone laptop technology", "coding computer"],
+    "india":       ["India cityscape", "New Delhi India"],
+    "business":    ["business office meeting", "corporate building"],
+    "economy":     ["stock market trading", "financial charts"],
+    "science":     ["science laboratory research", "space technology"],
+    "education":   ["school classroom India", "students studying"],
+    "lifestyle":   ["healthy lifestyle wellness", "modern home living"],
+    "entertainment":["concert music stage", "entertainment show"],
+}
+_GENERIC_FALLBACKS = ["news", "world news", "city", "business meeting", "newspaper"]
 
 
-def _build_fallback_queries(image_query, headline):
+def _build_fallback_queries(image_query, headline, category="global"):
     """Build progressively simpler search queries, ending with generic fallbacks."""
     queries = [image_query]
 
@@ -304,11 +318,13 @@ def _build_fallback_queries(image_query, headline):
              and w.strip("'\",.!?:()").lower() not in stop]
 
     if len(words) >= 2:
-        queries.append(" ".join(words[:2]))  # first 2 meaningful words
+        queries.append(" ".join(words[:2]))
     if words:
-        queries.append(words[0])             # single most important word
+        queries.append(words[0])
 
-    # Generic fallbacks so we ALWAYS find something
+    # Category-specific fallbacks before generic ones
+    cat_fallbacks = _CATEGORY_FALLBACKS.get(category, [])
+    queries.extend(cat_fallbacks)
     queries.extend(_GENERIC_FALLBACKS)
 
     seen = set()
@@ -330,7 +346,7 @@ def find_and_process_image(image_query, headline, context, history=None, categor
     _current_headline = headline
     _current_category = category
 
-    fallback_queries = _build_fallback_queries(image_query, headline)
+    fallback_queries = _build_fallback_queries(image_query, headline, category=category)
     generic_fallbacks = set(_GENERIC_FALLBACKS)
 
     for query in fallback_queries:

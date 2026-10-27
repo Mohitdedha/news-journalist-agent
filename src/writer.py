@@ -186,9 +186,10 @@ For this news story, return ONLY a JSON object. No explanation, no markdown fenc
 
 Story title: {title}
 Summary: {summary}
+Category: {category}
 
 JSON format — fill in real values:
-{{"headline": "Short punchy headline max 10 words, not a sentence fragment", "meta_description": "One factual sentence 120-150 chars, include key names/numbers", "tags": ["tag1","tag2","tag3","tag4","tag5"], "image_query": "IMPORTANT: Never use politician or celebrity names as image query — Unsplash has NO photos of Indian politicians like Rahul Gandhi, Modi, etc. Instead use a LOCATION or THEME: e.g. 'Indian parliament building New Delhi', 'Mumbai city street India', 'Delhi government building', 'India flag', 'cricket stadium India', 'stock market trading floor'. Always pick a place or theme related to the story, never a person's name."}}
+{{"headline": "Short punchy headline max 10 words, not a sentence fragment", "meta_description": "One factual sentence 120-150 chars, include key names/numbers", "tags": ["tag1","tag2","tag3","tag4","tag5"], "image_query": "IMPORTANT rules for image_query: (1) For AUTO/CAR/BIKE stories: use 'car road driving highway', 'motorcycle bike rider', 'electric vehicle charging station', 'car showroom India', 'luxury car dealership' — pick the most specific option for the story. (2) For SPORTS: use the sport name + action e.g. 'cricket match stadium India', 'football player training'. (3) For POLITICS/INDIA: NEVER use politician names — use location instead: 'Indian parliament New Delhi', 'Delhi government building', 'India flag'. (4) For TECHNOLOGY: 'smartphone technology India', 'laptop computer coding'. (5) For BUSINESS: 'business meeting office', 'stock market trading'. Always pick a concrete visual scene, never a person's name."}}
 """
 
 
@@ -239,6 +240,37 @@ def _groq_call_with_retry(prompt, max_tokens, label, max_retries=3, base_wait=30
     raise RuntimeError(f"{label} rate-limited after {max_retries} attempts")
 
 
+def _fix_paragraphs(html):
+    """Split large paragraphs — no paragraph should exceed 3 sentences."""
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    for p in list(soup.find_all("p")):
+        text = p.get_text(strip=True)
+        if not text:
+            continue
+        # Split on sentence boundaries
+        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'(])', text)
+        if len(sentences) <= 3:
+            continue
+        # Group into chunks of 2-3 sentences
+        new_tags = []
+        chunk = []
+        for i, s in enumerate(sentences):
+            chunk.append(s)
+            if len(chunk) >= 3 or i == len(sentences) - 1:
+                new_p = soup.new_tag("p")
+                new_p.string = " ".join(chunk)
+                new_tags.append(new_p)
+                chunk = []
+        if len(new_tags) > 1:
+            p.replace_with(new_tags[0])
+            prev = new_tags[0]
+            for tag in new_tags[1:]:
+                prev.insert_after(tag)
+                prev = tag
+    return str(soup)
+
+
 def write_article(story, max_retries=3):
     """
     Two-step generation:
@@ -250,13 +282,14 @@ def write_article(story, max_retries=3):
     title = story["title"]
     source_name = story["source_name"]
     summary = story["summary"]
+    category = story.get("category", "global")
 
     content_prompt = _CONTENT_PROMPT.format(
         title=title, source_name=source_name,
         summary=summary,
         article_text=article_text or "(use title and summary only)"
     )
-    meta_prompt = _META_PROMPT.format(title=title, summary=summary)
+    meta_prompt = _META_PROMPT.format(title=title, summary=summary, category=category)
 
     # ── Step 1: Generate HTML content (own retry loop) ──────────────────
     print("[WRITE] Step 1: generating content...")
@@ -275,6 +308,8 @@ def write_article(story, max_retries=3):
     if not content_html.startswith("<"):
         content_html = "<p>" + content_html.replace("\n\n", "</p><p>") + "</p>"
 
+    # Fix paragraph formatting — split large blocks into short paragraphs
+    content_html = _fix_paragraphs(content_html)
     print(f"[WRITE] Content OK: {len(content_html)} chars")
 
     # ── Wait between Step 1 and Step 2 so TPM window resets ────────────

@@ -165,7 +165,8 @@ def _validate_content(headline, content):
         raise ValueError(f"Headline too short: '{headline}'")
 
 
-def create_post(article, wp_category_id, featured_media_id=None, publish_status="draft"):
+def create_post(article, wp_category_id, featured_media_id=None, publish_status="draft",
+                category_name=""):
     """
     Create a WordPress post. Returns (post_id, post_url).
     publish_status: 'draft' for testing, 'publish' for live
@@ -174,6 +175,10 @@ def create_post(article, wp_category_id, featured_media_id=None, publish_status=
     content = article["content_html"]
     meta_desc = article["meta_description"]
     tags_list = article.get("tags", [])
+
+    # Ensure category exists on WordPress
+    if category_name:
+        wp_category_id = resolve_category(category_name, wp_category_id)
 
     # Hard guard — never publish garbage regardless of what writer returned
     _validate_content(headline, content)
@@ -223,6 +228,40 @@ def create_post(article, wp_category_id, featured_media_id=None, publish_status=
     except requests.HTTPError as e:
         body = e.response.text[:300] if e.response else ""
         raise RuntimeError(f"WordPress post creation failed: {e} — {body}")
+
+
+def resolve_category(category_name, category_id):
+    """Ensure WP category exists; if not found by ID, find/create by name. Returns actual ID."""
+    try:
+        resp = requests.get(
+            f"{WP_URL}/wp-json/wp/v2/categories/{category_id}",
+            auth=_auth(), timeout=10
+        )
+        if resp.status_code == 200:
+            return category_id
+        # Category ID doesn't exist — find or create by name
+        search = requests.get(
+            f"{WP_URL}/wp-json/wp/v2/categories",
+            params={"search": category_name, "per_page": 5},
+            auth=_auth(), timeout=10
+        )
+        search.raise_for_status()
+        for cat in search.json():
+            if cat.get("name","").lower() == category_name.lower():
+                print(f"[INFO] Found existing category '{category_name}' id={cat['id']}")
+                return cat["id"]
+        # Create it
+        create = requests.post(
+            f"{WP_URL}/wp-json/wp/v2/categories",
+            auth=_auth(), json={"name": category_name.title()}, timeout=10
+        )
+        create.raise_for_status()
+        new_id = create.json()["id"]
+        print(f"[INFO] Created category '{category_name}' id={new_id}")
+        return new_id
+    except Exception as e:
+        print(f"[WARN] Category resolve error: {e}, using id={category_id}")
+        return category_id
 
 
 def resolve_tags(tag_names):
