@@ -160,13 +160,23 @@ GOOGLE E-E-A-T:
 - Attribute every claim: "the ministry confirmed", "UN data shows", "officials told reporters".
 - One forward-looking paragraph: what vote, deadline, or decision comes next.
 
-STRUCTURE:
-- Lead (1-2 sentences — hardest fact first)
-- Context (why it matters — real numbers)
-- 5-6 H2 sections with THIS story's specific angle as heading (never generic)
-- 3-4 attributed quotes or paraphrased statements
-- One H2 "Frequently Asked Questions" with 4-5 H3 questions real people Google
+STRUCTURE — follow exactly:
+- H1 title tag: the article headline (only ONE h1 in the whole article)
+- Lead paragraph (1-2 sentences — hardest fact first, no heading above it)
+- Then 5-6 H2 sections, each with THIS story's specific angle as heading (never generic like "Background" or "Overview")
+  - Every H2 section must have EXACTLY 2 paragraphs under it
+  - Each paragraph must have 4-5 sentences (not less, not more)
+  - Inside an H2 section, use H3 only for sub-points if needed — never skip levels (no H3 without a parent H2)
+- 3-4 attributed quotes or paraphrased statements spread across sections
+- One H2 "Frequently Asked Questions" with 4-5 H3 questions real people Google, each followed by a 2-3 sentence answer paragraph
 - Final line: <p><em>Source: {source_name}</em></p>
+
+HEADING HIERARCHY RULES:
+- H1: article title only, once
+- H2: main section headings (5-6 total + FAQ)
+- H3: only inside FAQ or genuine sub-sections under an H2
+- Never use H4/H5/H6
+- Never put a heading directly under another heading with no paragraph between them
 
 OUTPUT: Only raw HTML. No markdown, no fences, no explanation. Start directly with <p>.
 
@@ -241,23 +251,30 @@ def _groq_call_with_retry(prompt, max_tokens, label, max_retries=3, base_wait=30
 
 
 def _fix_paragraphs(html):
-    """Split large paragraphs — no paragraph should exceed 3 sentences."""
+    """
+    Enforce paragraph size: each <p> must have 4-5 sentences.
+    - Too long (>5 sentences): split into 4-5 sentence chunks
+    - Too short (<4 sentences): merge with next <p> if possible
+    Also fixes heading hierarchy: removes H4+ and ensures no heading follows
+    another heading directly without a paragraph between them.
+    """
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
+
+    # ── Step 1: split paragraphs that are too long (>5 sentences) ───────────
     for p in list(soup.find_all("p")):
         text = p.get_text(strip=True)
         if not text:
             continue
-        # Split on sentence boundaries
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'(])', text)
-        if len(sentences) <= 3:
+        if len(sentences) <= 5:
             continue
-        # Group into chunks of 2-3 sentences
+        # Split into 4-5 sentence chunks
         new_tags = []
         chunk = []
         for i, s in enumerate(sentences):
             chunk.append(s)
-            if len(chunk) >= 3 or i == len(sentences) - 1:
+            if len(chunk) >= 4 or i == len(sentences) - 1:
                 new_p = soup.new_tag("p")
                 new_p.string = " ".join(chunk)
                 new_tags.append(new_p)
@@ -268,6 +285,45 @@ def _fix_paragraphs(html):
             for tag in new_tags[1:]:
                 prev.insert_after(tag)
                 prev = tag
+
+    # ── Step 2: merge consecutive short paragraphs (<3 sentences) ───────────
+    paragraphs = soup.find_all("p")
+    i = 0
+    while i < len(paragraphs) - 1:
+        p = paragraphs[i]
+        if not p.parent:
+            i += 1
+            continue
+        text = p.get_text(strip=True)
+        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'(])', text)
+        if len(sentences) < 3:
+            nxt = paragraphs[i + 1]
+            if nxt.parent:
+                nxt_text = nxt.get_text(strip=True)
+                nxt_sents = re.split(r'(?<=[.!?])\s+(?=[A-Z"\'(])', nxt_text)
+                if len(sentences) + len(nxt_sents) <= 5:
+                    merged = soup.new_tag("p")
+                    merged.string = text + " " + nxt_text
+                    p.replace_with(merged)
+                    nxt.decompose()
+                    paragraphs = soup.find_all("p")
+                    continue
+        i += 1
+
+    # ── Step 3: fix heading hierarchy — remove H4+ ───────────────────────────
+    for tag in soup.find_all(["h4", "h5", "h6"]):
+        # Demote to h3
+        tag.name = "h3"
+
+    # ── Step 4: no heading directly after another heading ────────────────────
+    headings = {"h1", "h2", "h3"}
+    for tag in list(soup.find_all(["h2", "h3"])):
+        prev = tag.find_previous_sibling()
+        if prev and prev.name in headings:
+            spacer = soup.new_tag("p")
+            spacer.string = ""
+            tag.insert_before(spacer)
+
     return str(soup)
 
 

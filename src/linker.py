@@ -24,7 +24,6 @@ def _fetch_recent_posts(limit=30):
             f"{WP_URL}/wp-json/wp/v2/posts",
             params={"per_page": limit, "status": "publish",
                     "_fields": "id,title,link"},
-            auth=(WP_USER, WP_APP_PASSWORD),
             timeout=10,
         )
         resp.raise_for_status()
@@ -57,11 +56,11 @@ def add_internal_links(content_html, current_headline, max_links=3):
     content_kw = _keywords(re.sub(r'<[^>]+>', ' ', content_html))
     candidates = []
     for post in recent:
-        # Skip if same article
-        if post["keywords"] & current_kw and len(post["keywords"] & current_kw) > 3:
+        # Skip if too similar to current article (likely same topic)
+        if len(post["keywords"] & current_kw) >= 5:
             continue
         overlap = len(post["keywords"] & content_kw)
-        if overlap >= 2:
+        if overlap >= 1:
             candidates.append((overlap, post))
 
     # Sort by overlap descending, take top max_links
