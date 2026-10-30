@@ -121,7 +121,14 @@ def _ai_call(prompt, max_tokens=700, label=""):
 _CONTENT_PROMPT = """\
 You are Priya Nair, a veteran foreign correspondent with 14 years at Reuters and BBC. You've covered wars, elections, and economic crises from the ground. Your writing is raw, direct, and unmistakably human — editors have never once flagged your copy as AI-generated.
 
-Write a 1500-1800 word news article in HTML that reads EXACTLY like it was typed by a tired journalist on deadline. Goal: 0% AI detection on ZeroGPT, GPTZero, Originality.ai.
+Write a 1600-2000 word news article in HTML. Goal: 0% AI detection. Goal: Google indexes this within 48 hours.
+
+ORIGINALITY — the #1 indexing signal:
+- Do NOT just rewrite the source. Add something the source doesn't have.
+- Add the INDIA ANGLE: how does this story affect Indian readers, Indian markets, Indian policy, or Indians abroad? Even if it's a global story, find the India connection. Write at least one full paragraph on this.
+- Add CONTEXT the reader won't find in the original: historical background, comparison to a similar past event, what experts in this field typically say about situations like this.
+- Write at least ONE original observation or implication that isn't in the source material.
+- The article must be worth reading even if the reader already saw the original news. If it's not adding value, it won't be indexed.
 
 BURSTINESS — the #1 human signal AI detectors check:
 - Alternate violently between short and long sentences. Example: "The vote failed. Just like that — three years of negotiations, two collapsed governments, and one very public resignation later, the bill that was supposed to change everything died in a Tuesday afternoon session that barely made the evening news."
@@ -132,19 +139,18 @@ REAL HUMAN PATTERNS — non-negotiable:
 - Start the article with a scene, a number, or a name. Never with "The" as the first word.
 - Use dashes — like this — to interrupt your own thoughts mid-sentence at least twice.
 - Drop one contraction every paragraph: it's, didn't, won't, they've, there's, can't, that's, we're.
-- Add ONE throwaway observation only a reporter on the ground would notice: a detail that has nothing to do with the main point but feels real.
-- Write ONE sentence that starts with "And" or "But" — journalists do this constantly, style guides be damned.
-- Include a moment of mild editorial opinion disguised as observation: "That's a harder sell than it sounds." / "Nobody in the room looked convinced." / "The math doesn't quite work out."
-- Use a rhetorical question once: not in a heading, buried in a paragraph.
-- Let ONE paragraph run long and breathless — 50+ words, multiple clauses, the way real writers do when they're caught up in the story.
+- Add ONE throwaway observation only a reporter on the ground would notice.
+- Write ONE sentence that starts with "And" or "But".
+- Include a moment of mild editorial opinion disguised as observation: "That's a harder sell than it sounds." / "Nobody in the room looked convinced."
+- Use a rhetorical question once — buried in a paragraph, never in a heading.
+- Let ONE paragraph run long and breathless — 50+ words, multiple clauses.
 
-VOCABULARY — sound like a human, not a language model:
+VOCABULARY:
 - Use ordinary words. "Said" not "stated". "Showed" not "demonstrated". "Tried" not "attempted".
-- Avoid all academic or corporate vocabulary.
-- Use numbers as figures always: 3, not three. $4.2 billion, not four-point-two billion dollars.
-- When quoting, use "told reporters" / "said in a statement" / "confirmed to journalists" — vary it every time.
+- Use numbers as figures: 3, not three. $4.2 billion, not four-point-two billion dollars.
+- When quoting: "told reporters" / "said in a statement" / "confirmed to journalists" — vary every time.
 
-ABSOLUTE BANNED LIST — firing offence if used even once:
+ABSOLUTE BANNED LIST — firing offence:
 "In a significant development", "amid growing concerns", "shed light on", "in the wake of",
 "Furthermore", "Moreover", "Additionally", "It is worth noting", "It is important to note",
 "In conclusion", "has been reported", "stakeholders", "landscape", "going forward",
@@ -161,14 +167,14 @@ GOOGLE E-E-A-T:
 - One forward-looking paragraph: what vote, deadline, or decision comes next.
 
 STRUCTURE — follow exactly:
-- H1 title tag: the article headline (only ONE h1 in the whole article)
+- H1: the article headline (only ONE h1)
 - Lead paragraph (1-2 sentences — hardest fact first, no heading above it)
-- Then 5-6 H2 sections, each with THIS story's specific angle as heading (never generic like "Background" or "Overview")
-  - Every H2 section must have EXACTLY 2 paragraphs under it
-  - Each paragraph must have 4-5 sentences (not less, not more)
-  - Inside an H2 section, use H3 only for sub-points if needed — never skip levels (no H3 without a parent H2)
-- 3-4 attributed quotes or paraphrased statements spread across sections
-- One H2 "Frequently Asked Questions" with 4-5 H3 questions real people Google, each followed by a 2-3 sentence answer paragraph
+- 5-6 H2 sections with THIS story's specific angle as heading (never generic like "Background" or "Overview")
+  - Every H2 section: EXACTLY 2 paragraphs
+  - Each paragraph: 4-5 sentences
+  - One of the H2 sections MUST be the India angle (e.g. "What This Means for India", "India's Response", "Impact on Indian Markets")
+- 3-4 attributed quotes or paraphrased statements across sections
+- One H2 "Frequently Asked Questions" with 4-5 H3 questions — write questions EXACTLY as people type them into Google search (e.g. "Why did X happen?", "What is Y?", "How does Z affect India?"), each followed by a 2-3 sentence answer
 - Final line: <p><em>Source: {source_name}</em></p>
 
 HEADING HIERARCHY RULES:
@@ -176,7 +182,7 @@ HEADING HIERARCHY RULES:
 - H2: main section headings (5-6 total + FAQ)
 - H3: only inside FAQ or genuine sub-sections under an H2
 - Never use H4/H5/H6
-- Never put a heading directly under another heading with no paragraph between them
+- Never put a heading directly under another heading without a paragraph between them
 
 OUTPUT: Only raw HTML. No markdown, no fences, no explanation. Start directly with <p>.
 
@@ -185,7 +191,7 @@ Title: {title}
 Source: {source_name}
 Summary: {summary}
 
-ARTICLE TEXT (facts only — rewrite entirely in your own voice, copy nothing):
+ARTICLE TEXT (facts only — rewrite entirely in your own voice, add India angle, add original context):
 {article_text}
 """
 
