@@ -284,7 +284,9 @@ def run():
         errors=errors
     )
 
-    if errors:
+    # Only fail the run if nothing was published AND there were errors
+    # (partial success = some stories failed but others published = exit 0)
+    if errors and published_count == 0:
         sys.exit(1)
 
 
