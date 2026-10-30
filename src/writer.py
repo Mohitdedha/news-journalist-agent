@@ -355,7 +355,7 @@ def write_article(story, max_retries=3):
 
     # ── Step 1: Generate HTML content (own retry loop) ──────────────────
     print("[WRITE] Step 1: generating content...")
-    content_html = _groq_call_with_retry(content_prompt, max_tokens=4000, label="Step1-content", base_wait=60)
+    content_html = _groq_call_with_retry(content_prompt, max_tokens=2800, label="Step1-content", base_wait=60)
 
     # Strip any accidental JSON/markdown wrapping
     content_html = re.sub(r'^```[a-z]*\s*', '', content_html, flags=re.MULTILINE)

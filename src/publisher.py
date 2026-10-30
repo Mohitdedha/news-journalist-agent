@@ -187,12 +187,9 @@ def create_post(article, wp_category_id, featured_media_id=None, publish_status=
     recent_posts = _fetch_recent_posts(limit=20)
     content = _inject_internal_links(content, headline, recent_posts, max_links=3)
 
-    # Add disclosure paragraph at end
-    disclosure = (
-        '<p><em>This article was compiled by the IndiaBBCNews editorial system from '
-        'verified international news sources. Facts have been independently reviewed. '
-        f'Original reporting: {article.get("source_name", "International sources")}.</em></p>'
-    )
+    # Add source attribution at end
+    source_name = article.get("source_name", "International sources")
+    disclosure = f'<p><em>Source: {source_name}</em></p>'
     content = content + disclosure
 
     # Resolve or create tag IDs

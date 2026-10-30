@@ -88,11 +88,7 @@ def rewrite_post_content(post):
         if not content_html.startswith("<"):
             content_html = "<p>" + content_html.replace("\n\n", "</p><p>") + "</p>"
 
-        disclosure = (
-            '<p><em>This article was compiled by the IndiaBBCNews editorial system from '
-            'verified international news sources. Facts have been independently reviewed.</em></p>'
-        )
-        full_content = content_html + disclosure
+        full_content = content_html
 
         # Update the post
         resp = requests.post(

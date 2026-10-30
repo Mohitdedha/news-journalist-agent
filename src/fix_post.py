@@ -45,11 +45,7 @@ def fix_post(post_id, title, source_name, summary):
     meta_desc = meta.get("meta_description", "")
     tags = [str(t) for t in meta.get("tags", [])[:8]]
 
-    disclosure = (
-        '<p><em>This article was compiled by the IndiaBBCNews editorial system from '
-        f'verified international news sources. Original reporting: {source_name}.</em></p>'
-    )
-    full_content = content_html + disclosure
+    full_content = content_html + f'<p><em>Source: {source_name}</em></p>'
 
     tag_ids = resolve_tags(tags)
 
