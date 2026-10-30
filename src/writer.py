@@ -185,6 +185,7 @@ HEADING HIERARCHY RULES:
 - Never put a heading directly under another heading without a paragraph between them
 
 OUTPUT: Only raw HTML. No markdown, no fences, no explanation. Start directly with <p>.
+STOP as soon as the article and FAQ are complete. Do NOT add filler, repeated phrases, or any text after the closing </p> of the FAQ. Never write "The next is..." or similar padding. If you reach the word limit before finishing, cut a section short — never pad.
 
 STORY:
 Title: {title}
