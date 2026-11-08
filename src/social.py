@@ -82,13 +82,20 @@ def _make_caption(headline, meta_description, post_url, tags, platform="generic"
             f"{hashtags}"
         )
     elif platform == "instagram":
-        # Instagram: headline + summary + link in bio note + hashtags (SEO relevant)
+        # Instagram: headline + summary + link + 25 niche hashtags
+        ig_tags = (
+            "#IndiaBBCNews #IndiaNews #BreakingNews #LatestNews #WorldNews "
+            "#CurrentAffairs #IndiaToday #NewsBulletin #IndianPolitics #IndiaFirst "
+            "#NewsAlert #TopStories #DailyNews #NewsUpdate #InternationalNews "
+            "#PoliticsIndia #EconomyIndia #TechNews #SportsNews #Viral "
+            "#FactCheck #MediaIndia #OnlineNews #DigitalNews #NewsIndia"
+        )
         return (
             f"{headline}\n\n"
             f"{meta_description}\n\n"
             f"🔗 Full story: {post_url}\n\n"
             f"{hashtags}\n"
-            f"#IndiaBBCNews #BreakingNews #WorldNews #LatestNews"
+            f"{ig_tags}"
         )
     else:
         # Facebook / LinkedIn
